@@ -109,25 +109,26 @@ namespace chess
 
     enum struct Piece : std::uint8_t
     {
-        MaxWhite = static_cast<uint8_t>(PieceType::King),
-        MaxBlack = 2 * MaxWhite,
+        White = 0,
+        Black = static_cast<uint8_t>(PieceType::King) + 1,
+        Max = 2 * Black,
         None,
         NB
     };
 
     constexpr Color color_of(Piece p) {
-        return p <= Piece::MaxWhite ? Color::White : Color::Black;
+        return p >= Piece::Black ? Color::Black : Color::White;
     }
 
     constexpr PieceType type_of(Piece p) {
-        return static_cast<PieceType>(p <= Piece::MaxWhite ? static_cast<uint8_t>(p) : static_cast<uint8_t>(p) - static_cast<uint8_t>(Piece::MaxWhite));
+        return static_cast<PieceType>(p >= Piece::Black ? static_cast<uint8_t>(p) - static_cast<uint8_t>(Piece::Black) : static_cast<uint8_t>(p));
     }
 
     constexpr Piece make_piece(PieceType pt, Color c) {
-        return static_cast<Piece>(static_cast<uint8_t>(c == Color::White ? Piece::MaxWhite : Piece::MaxBlack) + static_cast<uint8_t>(pt));
+        return static_cast<Piece>(static_cast<uint8_t>(c == Color::Black) * static_cast<uint8_t>(Piece::Black) + static_cast<uint8_t>(pt));
     }
 
-    enum struct Rank : std::uint8_t
+    enum struct Rank : std::int8_t // make sure that it does not underflow in loop
     {
         RANK_1,
         RANK_2,
@@ -163,23 +164,23 @@ namespace chess
     };
 
     inline Square make_square(File f, Rank r) {
-        return Square(std::uint8_t(File::FILE_MAX) * std::uint8_t(r) + std::uint8_t(f));
+        return Square(std::uint8_t(File::FILE_NB) * std::uint8_t(r) + std::uint8_t(f));
     }
 
     inline Rank file_of(Square s) {
-        return Rank(std::uint8_t(s) % std::uint8_t(File::FILE_MAX));
+        return Rank(std::uint8_t(s) % std::uint8_t(File::FILE_NB));
     }
 
     inline Rank rank_of(Square s) {
-        return Rank(std::uint8_t(s) / std::uint8_t(File::FILE_MAX));
-    }
-
-    inline Square flip_vertically(Square s) {
-        return Square(std::uint8_t(s) + std::uint8_t(File::FILE_MAX) - 2 * std::uint8_t(file_of(s)));
+        return Rank(std::uint8_t(s) / std::uint8_t(File::FILE_NB));
     }
 
     inline Square flip_horizontally(Square s) {
-        return Square(std::uint8_t(s) + std::uint8_t(Rank::RANK_MAX) - 2 * std::uint8_t(rank_of(s)));
+        return Square(std::uint8_t(s) + std::uint8_t(File::FILE_MAX) - 2 * std::uint8_t(file_of(s)));
+    }
+
+    inline Square flip_vertically(Square s) {
+        return Square(std::int8_t(s) + (std::int8_t(Rank::RANK_MAX) - 2 * std::int8_t(rank_of(s))) * std::int8_t(File::FILE_NB));
     }
 
     #define ENABLE_INCR_OPERATORS_ON(T)                                \
@@ -284,6 +285,7 @@ namespace chess
             m_pieceCount{},
             m_kings{}
         {
+            std::fill_n(m_pieces, uint(Square::NB), Piece::None);
         }
 
         constexpr void place(Piece piece, Square sq)
@@ -293,9 +295,9 @@ namespace chess
             if (type_of(piece) == PieceType::King)
                 m_kings[static_cast<uint8_t>(color_of(piece))] = sq;
             if (oldPiece != Piece::None)
-                ++m_pieceCount;
-            if (piece != Piece::None)
                 --m_pieceCount;
+            if (piece != Piece::None)
+                ++m_pieceCount;
         }
 
         [[nodiscard]] constexpr Piece pieceAt(Square sq) const

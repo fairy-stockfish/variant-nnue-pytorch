@@ -59,7 +59,7 @@ static Square orient_flip(Color color, Square sq)
 }
 
 struct HalfKP {
-    static constexpr int NUM_SQ = static_cast<int>(Square::MAX);
+    static constexpr int NUM_SQ = static_cast<int>(Square::NB);
     static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2;
     static constexpr int NUM_PLANES = (NUM_SQ * NUM_PT + 1);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
@@ -138,7 +138,7 @@ struct HalfKPFactorized {
 };
 
 struct HalfKA {
-    static constexpr int NUM_SQ = static_cast<int>(Square::MAX);
+    static constexpr int NUM_SQ = static_cast<int>(Square::NB);
     static constexpr int NUM_PT = (static_cast<int>(PieceType::King) + 1) * 2;
     static constexpr int NUM_PLANES = (NUM_SQ * NUM_PT + 1);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
@@ -201,7 +201,7 @@ struct HalfKAFactorized {
 };
 
 struct HalfKAv2 {
-    static constexpr int NUM_SQ = static_cast<int>(Square::MAX);
+    static constexpr int NUM_SQ = static_cast<int>(Square::NB);
     static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2 + 1;
     static constexpr int NUM_PLANES = NUM_SQ * NUM_PT;
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
