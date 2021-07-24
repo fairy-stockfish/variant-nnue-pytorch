@@ -450,7 +450,7 @@ namespace binpack
 
                 if (type == chess::MoveType::Promotion)
                 {
-                    const chess::Color stm = rank_of(to) == chess::Rank::RANK_8 ? chess::Color::White : chess::Color::Black;
+                    const chess::Color stm = rank_of(to) >= chess::Rank::RANK_5 ? chess::Color::White : chess::Color::Black;
                     return chess::Move{from, to, type, make_piece(promotionType, stm)};
                 }
 

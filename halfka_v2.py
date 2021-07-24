@@ -16,7 +16,7 @@ def orient(is_white_pov: bool, sq: int):
 
 def halfka_idx(is_white_pov: bool, king_sq: int, sq: int, p: chess.Piece):
   p_idx = (p.piece_type - 1) * 2 + (p.color != is_white_pov)
-  if p_idx == 11:
+  if p_idx == NUM_PT_REAL:
     p_idx -= 1
   return orient(is_white_pov, sq) + p_idx * NUM_SQ + king_sq * NUM_PLANES_REAL
 
@@ -32,8 +32,8 @@ def halfka_psqts():
 
   values = [0] * (NUM_PLANES_REAL * NUM_SQ)
 
-  for ksq in range(64):
-    for s in range(64):
+  for ksq in range(NUM_SQ):
+    for s in range(NUM_SQ):
       for pt, val in piece_values.items():
         idxw = halfka_idx(True, ksq, s, chess.Piece(pt, chess.WHITE))
         idxb = halfka_idx(True, ksq, s, chess.Piece(pt, chess.BLACK))
@@ -71,7 +71,7 @@ class FactorizedFeatures(FeatureBlock):
     a_idx = idx % NUM_PLANES_REAL
     k_idx = idx // NUM_PLANES_REAL
 
-    if a_idx // NUM_SQ == 10 and k_idx != a_idx % NUM_SQ:
+    if a_idx // NUM_SQ == NUM_PT_REAL - 1 and k_idx != a_idx % NUM_SQ:
       a_idx += NUM_SQ
 
     return [idx, self.get_factor_base_feature('A') + a_idx]

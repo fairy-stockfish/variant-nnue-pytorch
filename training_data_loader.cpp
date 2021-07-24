@@ -29,6 +29,8 @@
 using namespace binpack;
 using namespace chess;
 
+static constexpr int MAX_PIECES = 32;
+
 static Square orient(Color color, Square sq)
 {
     if (color == Color::White)
@@ -58,11 +60,11 @@ static Square orient_flip(Color color, Square sq)
 
 struct HalfKP {
     static constexpr int NUM_SQ = static_cast<int>(Square::MAX);
-    static constexpr int NUM_PT = 10;
+    static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2;
     static constexpr int NUM_PLANES = (NUM_SQ * NUM_PT + 1);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
 
-    static constexpr int MAX_ACTIVE_FEATURES = 32;
+    static constexpr int MAX_ACTIVE_FEATURES = MAX_PIECES;
 
     static int feature_index(Color color, Square ksq, Square sq, Piece p)
     {
@@ -99,7 +101,7 @@ struct HalfKPFactorized {
     static constexpr int INPUTS = HalfKP::INPUTS + K_INPUTS + PIECE_INPUTS;
 
     static constexpr int MAX_K_FEATURES = 1;
-    static constexpr int MAX_PIECE_FEATURES = 32;
+    static constexpr int MAX_PIECE_FEATURES = MAX_PIECES;
     static constexpr int MAX_ACTIVE_FEATURES = HalfKP::MAX_ACTIVE_FEATURES + MAX_K_FEATURES + MAX_PIECE_FEATURES;
 
     static std::pair<int, int> fill_features_sparse(const TrainingDataEntry& e, int* features, float* values, Color color)
@@ -137,11 +139,11 @@ struct HalfKPFactorized {
 
 struct HalfKA {
     static constexpr int NUM_SQ = static_cast<int>(Square::MAX);
-    static constexpr int NUM_PT = 12;
+    static constexpr int NUM_PT = (static_cast<int>(PieceType::King) + 1) * 2;
     static constexpr int NUM_PLANES = (NUM_SQ * NUM_PT + 1);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
 
-    static constexpr int MAX_ACTIVE_FEATURES = 32;
+    static constexpr int MAX_ACTIVE_FEATURES = MAX_PIECES;
 
     static int feature_index(Color color, Square ksq, Square sq, Piece p)
     {
@@ -174,7 +176,7 @@ struct HalfKAFactorized {
     static constexpr int PIECE_INPUTS = HalfKA::NUM_SQ * HalfKA::NUM_PT;
     static constexpr int INPUTS = HalfKA::INPUTS + PIECE_INPUTS;
 
-    static constexpr int MAX_PIECE_FEATURES = 32;
+    static constexpr int MAX_PIECE_FEATURES = MAX_PIECES;
     static constexpr int MAX_ACTIVE_FEATURES = HalfKA::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES;
 
     static std::pair<int, int> fill_features_sparse(const TrainingDataEntry& e, int* features, float* values, Color color)
@@ -200,11 +202,11 @@ struct HalfKAFactorized {
 
 struct HalfKAv2 {
     static constexpr int NUM_SQ = static_cast<int>(Square::MAX);
-    static constexpr int NUM_PT = 11;
+    static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2 + 1;
     static constexpr int NUM_PLANES = NUM_SQ * NUM_PT;
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
 
-    static constexpr int MAX_ACTIVE_FEATURES = 32;
+    static constexpr int MAX_ACTIVE_FEATURES = MAX_PIECES;
 
     static int feature_index(Color color, Square ksq, Square sq, Piece p)
     {
@@ -236,11 +238,11 @@ struct HalfKAv2 {
 
 struct HalfKAv2Factorized {
     // Factorized features
-    static constexpr int NUM_PT = 12;
+    static constexpr int NUM_PT = (static_cast<int>(PieceType::King) + 1) * 2;
     static constexpr int PIECE_INPUTS = HalfKAv2::NUM_SQ * NUM_PT;
     static constexpr int INPUTS = HalfKAv2::INPUTS + PIECE_INPUTS;
 
-    static constexpr int MAX_PIECE_FEATURES = 32;
+    static constexpr int MAX_PIECE_FEATURES = MAX_PIECES;
     static constexpr int MAX_ACTIVE_FEATURES = HalfKAv2::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES;
 
     static std::pair<int, int> fill_features_sparse(const TrainingDataEntry& e, int* features, float* values, Color color)
@@ -353,7 +355,7 @@ private:
         is_white[i] = static_cast<float>(e.pos.sideToMove() == Color::White);
         outcome[i] = (e.result + 1.0f) / 2.0f;
         score[i] = e.score;
-        psqt_indices[i] = (e.pos.pieceCount() - 1) / 4;
+        psqt_indices[i] = (e.pos.pieceCount() - 1) * 8 / MAX_PIECES;
         layer_stack_indices[i] = psqt_indices[i];
         fill_features(FeatureSet<Ts...>{}, i, e);
     }

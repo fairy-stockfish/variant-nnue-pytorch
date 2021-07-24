@@ -27,8 +27,8 @@ def halfka_psqts():
 
   values = [0] * (NUM_PLANES * NUM_SQ)
 
-  for ksq in range(64):
-    for s in range(64):
+  for ksq in range(NUM_SQ):
+    for s in range(NUM_SQ):
       for pt, val in piece_values.items():
         idxw = halfka_idx(True, ksq, s, chess.Piece(pt, chess.WHITE))
         idxb = halfka_idx(True, ksq, s, chess.Piece(pt, chess.BLACK))
