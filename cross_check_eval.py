@@ -12,9 +12,6 @@ def read_model(nnue_path, feature_set):
         reader = serialize.NNUEReader(f, feature_set)
         return reader.model
 
-def make_fen_batch_provider(data_path, batch_size):
-    return nnue_dataset.FenBatchProvider(data_path, True, 1, batch_size, False, 10)
-
 def eval_model_batch(model, batch):
     us, them, white_indices, white_values, black_indices, black_values, outcome, score, psqt_indices, layer_stack_indices = batch.contents.get_tensors('cuda')
 
