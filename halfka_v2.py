@@ -4,9 +4,9 @@ import feature_block
 from collections import OrderedDict
 from feature_block import *
 
-NUM_SQ = 64
-NUM_PT_REAL = 11
-NUM_PT_VIRTUAL = 12
+NUM_SQ = 49
+NUM_PT_REAL = 9
+NUM_PT_VIRTUAL = 10
 NUM_PLANES_REAL = NUM_SQ * NUM_PT_REAL
 NUM_PLANES_VIRTUAL = NUM_SQ * NUM_PT_VIRTUAL
 NUM_INPUTS = NUM_PLANES_REAL * NUM_SQ
