@@ -644,6 +644,7 @@ namespace binpack
                             goto Found;
                 }
             Found:;
+                pr = pr == 0 ? int(chess::PieceType::None) : pr - 1;
                 if (pr == static_cast<int>(chess::PieceType::None))
                     return chess::Piece::None;
 
