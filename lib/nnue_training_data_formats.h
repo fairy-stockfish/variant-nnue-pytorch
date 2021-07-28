@@ -101,10 +101,10 @@ namespace chess
         Bishop,
         Rook,
         Queen,
-        King,
+        King = 5,
 
         None,
-        NB
+        NB = King + 1
     };
 
     enum struct Piece : std::uint8_t
@@ -189,6 +189,7 @@ namespace chess
     ENABLE_INCR_OPERATORS_ON(Square);
     ENABLE_INCR_OPERATORS_ON(File);
     ENABLE_INCR_OPERATORS_ON(Rank);
+    ENABLE_INCR_OPERATORS_ON(PieceType);
 
     enum struct MoveType : std::uint8_t
     {
@@ -282,6 +283,7 @@ namespace chess
     {
         constexpr Board() noexcept :
             m_pieces{},
+            m_pocketCount{},
             m_pieceCount{},
             m_kings{}
         {
@@ -298,6 +300,11 @@ namespace chess
                 --m_pieceCount;
             if (piece != Piece::None)
                 ++m_pieceCount;
+        }
+
+        constexpr void setHandCount(Piece piece, uint8_t count)
+        {
+            m_pocketCount[static_cast<uint8_t>(piece)] = count;
         }
 
         [[nodiscard]] constexpr Piece pieceAt(Square sq) const
@@ -319,6 +326,7 @@ namespace chess
 
     private:
         Piece m_pieces[uint(Square::NB)];
+        uint8_t m_pocketCount[uint(PieceType::NB)];
         uint8_t m_pieceCount;
         Square m_kings[uint(Color::NB)];
     };
@@ -338,7 +346,7 @@ namespace chess
         {
         }
 
-        constexpr Position(const Board& board, Color sideToMove, Square epSquare, CastlingRights castlingRights) :
+        constexpr Position(const Board& board, const Board& pocket, Color sideToMove, Square epSquare, CastlingRights castlingRights) :
             Board(board),
             m_sideToMove(sideToMove),
             m_epSquare(epSquare),
@@ -466,7 +474,7 @@ namespace binpack
 
         struct PackedSfen
         {
-            uint8_t data[32];
+            uint8_t data[64];
         };
 
         struct PackedSfenValue
@@ -496,7 +504,7 @@ namespace binpack
 
             // 32 + 2 + 2 + 2 + 1 + 1 = 40bytes
         };
-        static_assert(sizeof(PackedSfenValue) == 40);
+        static_assert(sizeof(PackedSfenValue) == 72);
         // Class that handles bitstream
 
         // useful when doing aspect encoding
@@ -582,6 +590,7 @@ namespace binpack
             {0b1001,4}, // QUEEN    9
             {-1,-1},    // KING - unused
             {0b0000,1}, // NO_PIECE 0
+            // TODO
         };
 
         // Class for compressing/decompressing sfen
@@ -649,8 +658,8 @@ namespace binpack
             pos.setSideToMove((chess::Color)stream.read_one_bit());
 
             // First the position of the ball
-            pos.place(make_piece(chess::PieceType::King, chess::Color::White), static_cast<chess::Square>(stream.read_n_bit(6)));
-            pos.place(make_piece(chess::PieceType::King, chess::Color::Black), static_cast<chess::Square>(stream.read_n_bit(6)));
+            pos.place(make_piece(chess::PieceType::King, chess::Color::White), static_cast<chess::Square>(stream.read_n_bit(7)));
+            pos.place(make_piece(chess::PieceType::King, chess::Color::Black), static_cast<chess::Square>(stream.read_n_bit(7)));
 
             // Piece placement
             for (chess::Rank r = chess::Rank::RANK_MAX; r >= chess::Rank::RANK_1; --r)
@@ -667,9 +676,13 @@ namespace binpack
                         if (pc != chess::Piece::None)
                             pos.place(pc, sq);
                     }
-                    assert(stream.get_cursor() <= 256);
+                    assert(stream.get_cursor() <= 512);
                 }
             }
+
+            for (chess::Color c : { chess::Color::White, chess::Color::Black })
+                for (chess::PieceType pt = chess::PieceType::Pawn; pt <= chess::PieceType::King; ++pt)
+                    pos.setHandCount(make_piece(pt, c), static_cast<int>(stream.read_n_bit(5)));
 
             // Castling availability.
             chess::CastlingRights cr = chess::CastlingRights::None;
