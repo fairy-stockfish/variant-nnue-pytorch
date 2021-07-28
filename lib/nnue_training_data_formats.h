@@ -583,14 +583,23 @@ namespace binpack
         // NOTE: Order adjusted for this library because originally NO_PIECE had index 0
         constexpr HuffmanedPiece huffman_table[] =
         {
-            {0b0001,4}, // PAWN     1
-            {0b0011,4}, // KNIGHT   3
-            {0b0101,4}, // BISHOP   5
-            {0b0111,4}, // ROOK     7
-            {0b1001,4}, // QUEEN    9
-            {-1,-1},    // KING - unused
-            {0b0000,1}, // NO_PIECE 0
-            // TODO
+            {0b00000,1}, // NO_PIECE
+            {0b00001,5}, // PAWN
+            {0b00011,5}, // KNIGHT
+            {0b00101,5}, // BISHOP
+            {0b00111,5}, // ROOK
+            {0b01001,5}, // QUEEN
+            {0b01011,5}, //
+            {0b01101,5}, //
+            {0b01111,5}, //
+            {0b10001,5}, //
+            {0b10011,5}, //
+            {0b10101,5}, //
+            {0b10111,5}, //
+            {0b11001,5}, //
+            {0b11011,5}, //
+            {0b11101,5}, //
+            {0b11111,5}, //
         };
 
         // Class for compressing/decompressing sfen
