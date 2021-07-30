@@ -712,7 +712,7 @@ namespace binpack
 
             // En passant square. Ignore if no pawn capture is possible
             if (stream.read_one_bit()) {
-                chess::Square ep_square = static_cast<chess::Square>(stream.read_n_bit(6));
+                chess::Square ep_square = static_cast<chess::Square>(stream.read_n_bit(7));
                 pos.setEpSquare(ep_square);
             }
 
