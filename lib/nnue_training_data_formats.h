@@ -735,7 +735,7 @@ namespace binpack
             pos.setFullMove(fullmove);
             pos.setRule50Counter(rule50);
 
-            assert(stream.get_cursor() <= 256);
+            assert(stream.get_cursor() <= 512);
 
             return pos;
         }
