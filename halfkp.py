@@ -4,15 +4,17 @@ import feature_block
 from collections import OrderedDict
 from feature_block import *
 
-NUM_SQ = 64
-NUM_PT = 10
+import variant
+
+NUM_SQ = variant.SQUARES
+NUM_PT = variant.PIECES - 2
 NUM_PLANES = (NUM_SQ * NUM_PT + 1)
 
 def orient(is_white_pov: bool, sq: int):
-  return (63 * (not is_white_pov)) ^ sq
+  return (variant.FILES - 1 - sq % variant.FILES) + (variant.RANKS - 1 - (sq // variant.FILES)) * variant.FILES if not is_white_pov else sq
 
-def halfkp_idx(is_white_pov: bool, king_sq: int, sq: int, p: chess.Piece):
-  p_idx = (p.piece_type - 1) * 2 + (p.color != is_white_pov)
+def halfkp_idx(is_white_pov: bool, king_sq: int, sq: int, piece_type: int, color: bool):
+  p_idx = (piece_type - 1) * 2 + (color != is_white_pov)
   return 1 + orient(is_white_pov, sq) + p_idx * NUM_SQ + king_sq * NUM_PLANES
 
 class Features(FeatureBlock):

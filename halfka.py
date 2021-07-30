@@ -4,34 +4,27 @@ import feature_block
 from collections import OrderedDict
 from feature_block import *
 
-NUM_SQ = 64
-NUM_PT = 12
+import variant
+
+NUM_SQ = variant.SQUARES
+NUM_PT = variant.PIECES
 NUM_PLANES = (NUM_SQ * NUM_PT + 1)
 
 def orient(is_white_pov: bool, sq: int):
-  return (56 * (not is_white_pov)) ^ sq
+  return sq % variant.FILES + (variant.RANKS - 1 - (sq // variant.FILES)) * variant.FILES if not is_white_pov else sq
 
-def halfka_idx(is_white_pov: bool, king_sq: int, sq: int, p: chess.Piece):
-  p_idx = (p.piece_type - 1) * 2 + (p.color != is_white_pov)
+def halfka_idx(is_white_pov: bool, king_sq: int, sq: int, piece_type: int, color: bool):
+  p_idx = (piece_type - 1) * 2 + (color != is_white_pov)
   return 1 + orient(is_white_pov, sq) + p_idx * NUM_SQ + king_sq * NUM_PLANES
 
 def halfka_psqts():
-  # values copied from stockfish, in stockfish internal units
-  piece_values = {
-    chess.PAWN : 126,
-    chess.KNIGHT : 781,
-    chess.BISHOP : 825,
-    chess.ROOK : 1276,
-    chess.QUEEN : 2538
-  }
-
   values = [0] * (NUM_PLANES * NUM_SQ)
 
   for ksq in range(NUM_SQ):
     for s in range(NUM_SQ):
-      for pt, val in piece_values.items():
-        idxw = halfka_idx(True, ksq, s, chess.Piece(pt, chess.WHITE))
-        idxb = halfka_idx(True, ksq, s, chess.Piece(pt, chess.BLACK))
+      for pt, val in variant.PIECE_VALUES.items():
+        idxw = halfka_idx(True, ksq, s, pt, chess.WHITE)
+        idxb = halfka_idx(True, ksq, s, pt, chess.BLACK)
         values[idxw] = val
         values[idxb] = -val
 
