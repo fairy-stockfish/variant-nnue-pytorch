@@ -111,7 +111,7 @@ namespace chess
     {
         White = 0,
         Black = static_cast<uint8_t>(PieceType::King) + 1,
-        Max = 2 * Black,
+        Max = Black + static_cast<uint8_t>(PieceType::King),
         None,
         NB
     };
@@ -326,7 +326,7 @@ namespace chess
 
     private:
         Piece m_pieces[uint(Square::NB)];
-        uint8_t m_pocketCount[uint(PieceType::NB)];
+        uint8_t m_pocketCount[uint(Piece::NB)];
         uint8_t m_pieceCount;
         Square m_kings[uint(Color::NB)];
     };
@@ -629,7 +629,7 @@ namespace binpack
             // Read one board piece from stream
             [[nodiscard]] chess::Piece read_board_piece_from_stream()
             {
-                int pr = static_cast<int>(chess::PieceType::None);
+                int pr = 0;
                 int code = 0, bits = 0;
                 while (true)
                 {
@@ -638,20 +638,19 @@ namespace binpack
 
                     assert(bits <= 6);
 
-                    for (pr = static_cast<int>(chess::PieceType::Pawn); pr <= static_cast<int>(chess::PieceType::None); ++pr)
+                    for (pr = 0; pr <= static_cast<int>(chess::PieceType::None); ++pr)
                         if (huffman_table[pr].code == code
                             && huffman_table[pr].bits == bits)
                             goto Found;
                 }
             Found:;
-                pr = pr == 0 ? int(chess::PieceType::None) : pr - 1;
-                if (pr == static_cast<int>(chess::PieceType::None))
+                if (pr == 0)
                     return chess::Piece::None;
 
                 // first and second flag
                 chess::Color c = (chess::Color)stream.read_one_bit();
 
-                return make_piece(static_cast<chess::PieceType>(pr), c);
+                return make_piece(static_cast<chess::PieceType>(pr - 1), c);
             }
         };
 
