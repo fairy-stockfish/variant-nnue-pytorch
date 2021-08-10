@@ -29,7 +29,7 @@
 using namespace binpack;
 using namespace chess;
 
-static constexpr int MAX_PIECES = 32;
+static constexpr int MAX_PIECES = 40;
 
 static Square orient(Color color, Square sq)
 {
