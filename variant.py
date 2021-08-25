@@ -1,13 +1,17 @@
 RANKS = 8
 FILES = 8
 SQUARES = RANKS * FILES
-PIECE_TYPES = 6
+PIECE_TYPES = 10
 PIECES = 2 * PIECE_TYPES
 
 PIECE_VALUES = {
-    1 : 126,
-    2 : 781,
-    3 : 825,
-    4 : 1276,
-    5 : 2538,
+    1: 126,
+    2: 781,
+    3: 825,
+    4: 1276,
+    5: 2538,
+    6: 660,
+    7: 1100,
+    8: 1050,
+    9: 1800,
 }

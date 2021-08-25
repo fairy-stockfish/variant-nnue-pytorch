@@ -101,7 +101,7 @@ namespace chess
         Bishop,
         Rook,
         Queen,
-        King = 5,
+        King = 9,
 
         None,
         NB = King + 1
