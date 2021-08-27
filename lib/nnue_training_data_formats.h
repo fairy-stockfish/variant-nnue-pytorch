@@ -101,7 +101,7 @@ namespace chess
         Bishop,
         Rook,
         Queen,
-        King = 5,
+        King = 7,
 
         None,
         NB = King + 1
@@ -138,7 +138,7 @@ namespace chess
         RANK_6,
         RANK_7,
         RANK_8,
-        RANK_MAX = RANK_8,
+        RANK_MAX = 9,
         RANK_NB,
     };
 
@@ -152,7 +152,7 @@ namespace chess
         FILE_F,
         FILE_G,
         FILE_H,
-        FILE_MAX = FILE_H,
+        FILE_MAX = 9,
         FILE_NB
     };
 
