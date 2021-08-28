@@ -29,7 +29,8 @@
 using namespace binpack;
 using namespace chess;
 
-static constexpr int MAX_PIECES = 32;
+static constexpr int MAX_PIECES = PIECE_COUNT;
+static constexpr int MAX_HAND_PIECES = POCKETS ? 2 * static_cast<int>(File::FILE_NB) : 0;
 
 static Square orient(Color color, Square sq)
 {
@@ -203,7 +204,7 @@ struct HalfKAFactorized {
 struct HalfKAv2 {
     static constexpr int NUM_SQ = static_cast<int>(Square::NB);
     static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2 + 1;
-    static constexpr int NUM_PLANES = NUM_SQ * NUM_PT;
+    static constexpr int NUM_PLANES = NUM_SQ * NUM_PT + MAX_HAND_PIECES * (NUM_PT - 1);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
 
     static constexpr int MAX_ACTIVE_FEATURES = MAX_PIECES;
@@ -214,6 +215,12 @@ struct HalfKAv2 {
         if (p_idx == NUM_PT)
             --p_idx; // pack the opposite king into the same NUM_SQ * NUM_SQ
         return static_cast<int>(orient_flip(color, sq)) + p_idx * NUM_SQ + static_cast<int>(ksq) * NUM_PLANES;
+    }
+
+    static int feature_index(Color color, Square ksq, int handCount, Piece p)
+    {
+        auto p_idx = static_cast<int>(type_of(p)) * 2 + (color_of(p) != color);
+        return handCount + p_idx * MAX_HAND_PIECES + NUM_SQ * NUM_PT + static_cast<int>(ksq) * NUM_PLANES;
     }
 
     static std::pair<int, int> fill_features_sparse(const TrainingDataEntry& e, int* features, float* values, Color color)
@@ -232,6 +239,15 @@ struct HalfKAv2 {
             ++j;
         }
 
+        for (PieceType pt = PieceType::Pawn; pt < PieceType::King; ++pt)
+            for (Color c : { Color::White, Color::Black })
+                for (int i = 0; i < pos.getHandCount(make_piece(pt, c)); i++)
+                {
+                    values[j] = 1.0f;
+                    features[j] = feature_index(color, orient_flip(color, ksq), i, make_piece(pt, c));
+                    ++j;
+                }
+
         return { j, INPUTS };
     }
 };
@@ -239,7 +255,7 @@ struct HalfKAv2 {
 struct HalfKAv2Factorized {
     // Factorized features
     static constexpr int NUM_PT = (static_cast<int>(PieceType::King) + 1) * 2;
-    static constexpr int PIECE_INPUTS = HalfKAv2::NUM_SQ * NUM_PT;
+    static constexpr int PIECE_INPUTS = HalfKAv2::NUM_SQ * NUM_PT + MAX_HAND_PIECES * (NUM_PT - 2);
     static constexpr int INPUTS = HalfKAv2::INPUTS + PIECE_INPUTS;
 
     static constexpr int MAX_PIECE_FEATURES = MAX_PIECES;
@@ -261,6 +277,16 @@ struct HalfKAv2Factorized {
             features[j] = offset + (p_idx * HalfKAv2::NUM_SQ) + static_cast<int>(orient_flip(color, sq));
             ++j;
         }
+
+        for (PieceType pt = PieceType::Pawn; pt < PieceType::King; ++pt)
+            for (Color c : { Color::White, Color::Black })
+                for (int i = 0; i < pos.getHandCount(make_piece(pt, c)); i++)
+                {
+                    values[j] = 1.0f;
+                    auto p_idx = static_cast<int>(pt) * 2 + (c != color);
+                    features[j] = offset + i + p_idx * MAX_HAND_PIECES + HalfKAv2::NUM_SQ * NUM_PT;
+                    ++j;
+                }
 
         return { j, INPUTS };
     }

@@ -9,8 +9,8 @@ import variant
 NUM_SQ = variant.SQUARES
 NUM_PT_REAL = variant.PIECES - 1
 NUM_PT_VIRTUAL = variant.PIECES
-NUM_PLANES_REAL = NUM_SQ * NUM_PT_REAL
-NUM_PLANES_VIRTUAL = NUM_SQ * NUM_PT_VIRTUAL
+NUM_PLANES_REAL = NUM_SQ * NUM_PT_REAL + (NUM_PT_REAL - 1) * variant.POCKETS
+NUM_PLANES_VIRTUAL = NUM_SQ * NUM_PT_VIRTUAL + (NUM_PT_REAL - 1) * variant.POCKETS
 NUM_INPUTS = NUM_PLANES_REAL * NUM_SQ
 
 def orient(is_white_pov: bool, sq: int):
@@ -22,6 +22,10 @@ def halfka_idx(is_white_pov: bool, king_sq: int, sq: int, piece_type: int, color
     p_idx -= 1
   return orient(is_white_pov, sq) + p_idx * NUM_SQ + king_sq * NUM_PLANES_REAL
 
+def halfka_hand_idx(is_white_pov: bool, king_sq: int, handCount: int, piece_type: int, color: bool):
+  p_idx = (piece_type - 1) * 2 + (color != is_white_pov)
+  return handCount + p_idx * variant.POCKETS + NUM_SQ * NUM_PT_REAL + king_sq * NUM_PLANES_REAL
+
 def halfka_psqts():
   values = [0] * (NUM_PLANES_REAL * NUM_SQ)
 
@@ -30,6 +34,12 @@ def halfka_psqts():
       for pt, val in variant.PIECE_VALUES.items():
         idxw = halfka_idx(True, ksq, s, pt, chess.WHITE)
         idxb = halfka_idx(True, ksq, s, pt, chess.BLACK)
+        values[idxw] = val
+        values[idxb] = -val
+    for i in range(variant.POCKETS):
+      for pt, val in variant.PIECE_VALUES.items():
+        idxw = halfka_hand_idx(True, ksq, i, pt, chess.WHITE)
+        idxb = halfka_hand_idx(True, ksq, i, pt, chess.BLACK)
         values[idxw] = val
         values[idxb] = -val
 
@@ -65,6 +75,9 @@ class FactorizedFeatures(FeatureBlock):
     k_idx = idx // NUM_PLANES_REAL
 
     if a_idx // NUM_SQ == NUM_PT_REAL - 1 and k_idx != a_idx % NUM_SQ:
+      a_idx += NUM_SQ
+    elif a_idx >= NUM_SQ * NUM_PT_REAL:
+      # pockets
       a_idx += NUM_SQ
 
     return [idx, self.get_factor_base_feature('A') + a_idx]

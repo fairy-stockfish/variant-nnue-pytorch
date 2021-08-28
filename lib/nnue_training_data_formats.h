@@ -54,6 +54,12 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <intrin.h>
 #endif
 
+#define FILES 8
+#define RANKS 8
+#define PIECE_TYPES 6
+#define PIECE_COUNT 32
+#define POCKETS false
+
 namespace chess
 {
     #if defined(__clang__) || defined(__GNUC__) || defined(__GNUG__)
@@ -101,7 +107,7 @@ namespace chess
         Bishop,
         Rook,
         Queen,
-        King = 5,
+        King = PIECE_TYPES - 1,
 
         None,
         NB = King + 1
@@ -138,7 +144,7 @@ namespace chess
         RANK_6,
         RANK_7,
         RANK_8,
-        RANK_MAX = RANK_8,
+        RANK_MAX = RANKS - 1,
         RANK_NB,
     };
 
@@ -152,7 +158,7 @@ namespace chess
         FILE_F,
         FILE_G,
         FILE_H,
-        FILE_MAX = FILE_H,
+        FILE_MAX = FILES - 1,
         FILE_NB
     };
 
@@ -305,6 +311,11 @@ namespace chess
         constexpr void setHandCount(Piece piece, uint8_t count)
         {
             m_pocketCount[static_cast<uint8_t>(piece)] = count;
+        }
+
+        constexpr int getHandCount(Piece piece) const
+        {
+            return m_pocketCount[static_cast<uint8_t>(piece)];
         }
 
         [[nodiscard]] constexpr Piece pieceAt(Square sq) const
