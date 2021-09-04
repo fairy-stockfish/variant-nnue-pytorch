@@ -54,11 +54,11 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <intrin.h>
 #endif
 
-#define FILES 8
-#define RANKS 8
-#define PIECE_TYPES 6
-#define PIECE_COUNT 32
-#define POCKETS false
+#define FILES 5
+#define RANKS 5
+#define PIECE_TYPES 8
+#define PIECE_COUNT 12
+#define POCKETS true
 #define KING_SQUARES FILES * RANKS
 
 namespace chess
