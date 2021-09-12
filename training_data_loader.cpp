@@ -59,6 +59,15 @@ static Square orient_flip(Color color, Square sq)
     }
 }
 
+static int map_king(Square sq)
+{
+    // Xiangqi/Janggi
+    if (Square::KNB == Square(9) && Square::KNB != Square::NB)
+        return (int(sq) + 3 * (int(sq) / int(File::FILE_NB) - 1)) % int(Square::KNB);
+
+    return int(sq) % int(Square::KNB);
+}
+
 struct HalfKP {
     static constexpr int NUM_SQ = static_cast<int>(Square::NB);
     static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2;
@@ -70,7 +79,7 @@ struct HalfKP {
     static int feature_index(Color color, Square ksq, Square sq, Piece p)
     {
         auto p_idx = static_cast<int>(type_of(p)) * 2 + (color_of(p) != color);
-        return 1 + static_cast<int>(orient(color, sq)) + p_idx * NUM_SQ + static_cast<int>(ksq) * NUM_PLANES;
+        return 1 + static_cast<int>(orient(color, sq)) + p_idx * NUM_SQ + map_king(ksq) * NUM_PLANES;
     }
 
     static std::pair<int, int> fill_features_sparse(const TrainingDataEntry& e, int* features, float* values, Color color)
@@ -149,7 +158,7 @@ struct HalfKA {
     static int feature_index(Color color, Square ksq, Square sq, Piece p)
     {
         auto p_idx = static_cast<int>(type_of(p)) * 2 + (color_of(p) != color);
-        return 1 + static_cast<int>(orient_flip(color, sq)) + p_idx * NUM_SQ + static_cast<int>(ksq) * NUM_PLANES;
+        return 1 + static_cast<int>(orient_flip(color, sq)) + p_idx * NUM_SQ + map_king(ksq) * NUM_PLANES;
     }
 
     static std::pair<int, int> fill_features_sparse(const TrainingDataEntry& e, int* features, float* values, Color color)
@@ -202,10 +211,11 @@ struct HalfKAFactorized {
 };
 
 struct HalfKAv2 {
+    static constexpr int NUM_KSQ = static_cast<int>(Square::KNB);
     static constexpr int NUM_SQ = static_cast<int>(Square::NB);
     static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2 + 1;
     static constexpr int NUM_PLANES = NUM_SQ * NUM_PT + MAX_HAND_PIECES * (NUM_PT - 1);
-    static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
+    static constexpr int INPUTS = NUM_PLANES * NUM_KSQ;
 
     static constexpr int MAX_ACTIVE_FEATURES = MAX_PIECES;
 
@@ -214,13 +224,13 @@ struct HalfKAv2 {
         auto p_idx = static_cast<int>(type_of(p)) * 2 + (color_of(p) != color);
         if (p_idx == NUM_PT)
             --p_idx; // pack the opposite king into the same NUM_SQ * NUM_SQ
-        return static_cast<int>(orient_flip(color, sq)) + p_idx * NUM_SQ + static_cast<int>(ksq) * NUM_PLANES;
+        return static_cast<int>(orient_flip(color, sq)) + p_idx * NUM_SQ + map_king(ksq) * NUM_PLANES;
     }
 
     static int feature_index(Color color, Square ksq, int handCount, Piece p)
     {
         auto p_idx = static_cast<int>(type_of(p)) * 2 + (color_of(p) != color);
-        return handCount + p_idx * MAX_HAND_PIECES + NUM_SQ * NUM_PT + static_cast<int>(ksq) * NUM_PLANES;
+        return handCount + p_idx * MAX_HAND_PIECES + NUM_SQ * NUM_PT + map_king(ksq) * NUM_PLANES;
     }
 
     static std::pair<int, int> fill_features_sparse(const TrainingDataEntry& e, int* features, float* values, Color color)

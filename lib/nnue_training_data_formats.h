@@ -59,6 +59,7 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define PIECE_TYPES 6
 #define PIECE_COUNT 32
 #define POCKETS false
+#define KING_SQUARES FILES * RANKS
 
 namespace chess
 {
@@ -167,6 +168,7 @@ namespace chess
         MIN = 0,
         NB = std::uint8_t(Rank::RANK_NB) * std::uint8_t(File::FILE_NB),
         MAX = NB - 1,
+        KNB = KING_SQUARES,
     };
 
     inline Square make_square(File f, Rank r) {

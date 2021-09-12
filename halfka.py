@@ -7,6 +7,7 @@ from feature_block import *
 import variant
 
 NUM_SQ = variant.SQUARES
+NUM_KSQ = variant.KING_SQUARES
 NUM_PT = variant.PIECES
 NUM_PLANES = (NUM_SQ * NUM_PT + 1)
 
@@ -20,7 +21,7 @@ def halfka_idx(is_white_pov: bool, king_sq: int, sq: int, piece_type: int, color
 def halfka_psqts():
   values = [0] * (NUM_PLANES * NUM_SQ)
 
-  for ksq in range(NUM_SQ):
+  for ksq in range(NUM_KSQ):
     for s in range(NUM_SQ):
       for pt, val in variant.PIECE_VALUES.items():
         idxw = halfka_idx(True, ksq, s, pt, chess.WHITE)

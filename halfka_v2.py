@@ -7,11 +7,12 @@ from feature_block import *
 import variant
 
 NUM_SQ = variant.SQUARES
+NUM_KSQ = variant.KING_SQUARES
 NUM_PT_REAL = variant.PIECES - 1
 NUM_PT_VIRTUAL = variant.PIECES
 NUM_PLANES_REAL = NUM_SQ * NUM_PT_REAL + (NUM_PT_REAL - 1) * variant.POCKETS
 NUM_PLANES_VIRTUAL = NUM_SQ * NUM_PT_VIRTUAL + (NUM_PT_REAL - 1) * variant.POCKETS
-NUM_INPUTS = NUM_PLANES_REAL * NUM_SQ
+NUM_INPUTS = NUM_PLANES_REAL * NUM_KSQ
 
 def orient(is_white_pov: bool, sq: int):
   return sq % variant.FILES + (variant.RANKS - 1 - (sq // variant.FILES)) * variant.FILES if not is_white_pov else sq
@@ -26,10 +27,18 @@ def halfka_hand_idx(is_white_pov: bool, king_sq: int, handCount: int, piece_type
   p_idx = (piece_type - 1) * 2 + (color != is_white_pov)
   return handCount + p_idx * variant.POCKETS + NUM_SQ * NUM_PT_REAL + king_sq * NUM_PLANES_REAL
 
-def halfka_psqts():
-  values = [0] * (NUM_PLANES_REAL * NUM_SQ)
+def map_king(sq: int):
+  if NUM_KSQ == 9 and NUM_KSQ != NUM_SQ:
+    if sq > NUM_SQ / 2:
+      # in order to allow unambiguously detecting opposing kings, just return value out of range
+      return sq
+    return (sq + 3 * (sq // variant.FILES - 1)) % NUM_KSQ
+  return sq % NUM_KSQ
 
-  for ksq in range(NUM_SQ):
+def halfka_psqts():
+  values = [0] * (NUM_PLANES_REAL * NUM_KSQ)
+
+  for ksq in range(NUM_KSQ):
     for s in range(NUM_SQ):
       for pt, val in variant.PIECE_VALUES.items():
         idxw = halfka_idx(True, ksq, s, pt, chess.WHITE)
@@ -47,11 +56,11 @@ def halfka_psqts():
 
 class Features(FeatureBlock):
   def __init__(self):
-    super(Features, self).__init__('HalfKAv2', 0x5f234cb8, OrderedDict([('HalfKAv2', NUM_PLANES_REAL * NUM_SQ)]))
+    super(Features, self).__init__('HalfKAv2', 0x5f234cb8, OrderedDict([('HalfKAv2', NUM_PLANES_REAL * NUM_KSQ)]))
 
   def get_active_features(self, board: chess.Board):
     def piece_features(turn):
-      indices = torch.zeros(NUM_PLANES_REAL * NUM_SQ)
+      indices = torch.zeros(NUM_PLANES_REAL * NUM_KSQ)
       for sq, p in board.piece_map().items():
         indices[halfka_idx(turn, orient(turn, board.king(turn)), sq, p)] = 1.0
       return indices
@@ -62,7 +71,7 @@ class Features(FeatureBlock):
 
 class FactorizedFeatures(FeatureBlock):
   def __init__(self):
-    super(FactorizedFeatures, self).__init__('HalfKAv2^', 0x5f234cb8, OrderedDict([('HalfKAv2', NUM_PLANES_REAL * NUM_SQ), ('A', NUM_PLANES_VIRTUAL)]))
+    super(FactorizedFeatures, self).__init__('HalfKAv2^', 0x5f234cb8, OrderedDict([('HalfKAv2', NUM_PLANES_REAL * NUM_KSQ), ('A', NUM_PLANES_VIRTUAL)]))
 
   def get_active_features(self, board: chess.Board):
     raise Exception('Not supported yet, you must use the c++ data loader for factorizer support during training')
@@ -74,7 +83,8 @@ class FactorizedFeatures(FeatureBlock):
     a_idx = idx % NUM_PLANES_REAL
     k_idx = idx // NUM_PLANES_REAL
 
-    if a_idx // NUM_SQ == NUM_PT_REAL - 1 and k_idx != a_idx % NUM_SQ:
+    # is king piece, but not ours
+    if a_idx // NUM_SQ == NUM_PT_REAL - 1 and k_idx != map_king(a_idx % NUM_SQ):
       a_idx += NUM_SQ
     elif a_idx >= NUM_SQ * NUM_PT_REAL:
       # pockets
