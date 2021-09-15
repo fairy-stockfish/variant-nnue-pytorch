@@ -8,7 +8,7 @@ import variant
 
 NUM_SQ = variant.SQUARES
 NUM_KSQ = variant.KING_SQUARES
-NUM_PT_REAL = variant.PIECES - (NUM_KSQ == 1)
+NUM_PT_REAL = variant.PIECES - (NUM_KSQ != 1)
 NUM_PT_VIRTUAL = variant.PIECES
 NUM_PLANES_REAL = NUM_SQ * NUM_PT_REAL + (NUM_PT_REAL - 1) * variant.POCKETS
 NUM_PLANES_VIRTUAL = NUM_SQ * NUM_PT_VIRTUAL + (NUM_PT_REAL - 1) * variant.POCKETS
