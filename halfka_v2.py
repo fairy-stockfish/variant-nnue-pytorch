@@ -8,7 +8,7 @@ import variant
 
 NUM_SQ = variant.SQUARES
 NUM_KSQ = variant.KING_SQUARES
-NUM_PT_REAL = variant.PIECES - 1
+NUM_PT_REAL = variant.PIECES - (NUM_KSQ != 1)
 NUM_PT_VIRTUAL = variant.PIECES
 NUM_PLANES_REAL = NUM_SQ * NUM_PT_REAL + (NUM_PT_REAL - 1) * variant.POCKETS
 NUM_PLANES_VIRTUAL = NUM_SQ * NUM_PT_VIRTUAL + (NUM_PT_REAL - 1) * variant.POCKETS
@@ -19,7 +19,8 @@ def orient(is_white_pov: bool, sq: int):
 
 def halfka_idx(is_white_pov: bool, king_sq: int, sq: int, piece_type: int, color: bool):
   p_idx = (piece_type - 1) * 2 + (color != is_white_pov)
-  if p_idx == NUM_PT_REAL:
+  if NUM_PT_REAL % 2 and p_idx == NUM_PT_REAL:
+    # merge kings into one plane
     p_idx -= 1
   return orient(is_white_pov, sq) + p_idx * NUM_SQ + king_sq * NUM_PLANES_REAL
 
@@ -83,12 +84,13 @@ class FactorizedFeatures(FeatureBlock):
     a_idx = idx % NUM_PLANES_REAL
     k_idx = idx // NUM_PLANES_REAL
 
-    # is king piece, but not ours
-    if a_idx // NUM_SQ == NUM_PT_REAL - 1 and k_idx != map_king(a_idx % NUM_SQ):
-      a_idx += NUM_SQ
-    elif a_idx >= NUM_SQ * NUM_PT_REAL:
-      # pockets
-      a_idx += NUM_SQ
+    if NUM_PT_VIRTUAL != NUM_PT_REAL:
+      if a_idx // NUM_SQ == NUM_PT_REAL - 1 and k_idx != map_king(a_idx % NUM_SQ):
+        # is king piece, but not ours
+        a_idx += NUM_SQ
+      elif a_idx >= NUM_SQ * NUM_PT_REAL:
+        # pockets
+        a_idx += NUM_SQ
 
     return [idx, self.get_factor_base_feature('A') + a_idx]
 
