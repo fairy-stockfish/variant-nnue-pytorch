@@ -59,7 +59,7 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define PIECE_TYPES 6
 #define PIECE_COUNT 32
 #define POCKETS false
-#define KING_SQUARES FILES * RANKS
+#define KING_SQUARES 1
 
 namespace chess
 {
@@ -108,7 +108,8 @@ namespace chess
         Bishop,
         Rook,
         Queen,
-        King = PIECE_TYPES - 1,
+        MaxPiece = PIECE_TYPES - 1,
+        King = MaxPiece + (KING_SQUARES == 1),
 
         None,
         NB = King + 1
@@ -300,10 +301,16 @@ namespace chess
 
         constexpr void place(Piece piece, Square sq)
         {
+            if (type_of(piece) == PieceType::King)
+            {
+                m_kings[static_cast<uint8_t>(color_of(piece))] = sq;
+                assert((sq == Square::NB) == (KING_SQUARES == 1));
+                if (sq == Square::NB)
+                    // No king
+                    return;
+            }
             auto oldPiece = m_pieces[static_cast<uint8_t>(sq)];
             m_pieces[static_cast<uint8_t>(sq)] = piece;
-            if (type_of(piece) == PieceType::King)
-                m_kings[static_cast<uint8_t>(color_of(piece))] = sq;
             if (oldPiece != Piece::None)
                 --m_pieceCount;
             if (piece != Piece::None)
@@ -703,7 +710,7 @@ namespace binpack
             }
 
             for (chess::Color c : { chess::Color::White, chess::Color::Black })
-                for (chess::PieceType pt = chess::PieceType::Pawn; pt <= chess::PieceType::King; ++pt)
+                for (chess::PieceType pt = chess::PieceType::Pawn; pt <= chess::PieceType::MaxPiece; ++pt)
                     pos.setHandCount(make_piece(pt, c), static_cast<int>(stream.read_n_bit(5)));
 
             // Castling availability.

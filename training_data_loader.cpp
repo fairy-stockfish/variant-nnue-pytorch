@@ -49,6 +49,9 @@ static Square orient(Color color, Square sq)
 
 static Square orient_flip(Color color, Square sq)
 {
+    if (sq == Square::NB)
+        // map missing king to zero
+        return Square::MIN;
     if (color == Color::White)
     {
         return sq;
@@ -70,7 +73,7 @@ static int map_king(Square sq)
 
 struct HalfKP {
     static constexpr int NUM_SQ = static_cast<int>(Square::NB);
-    static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2;
+    static constexpr int NUM_PT = static_cast<int>(PieceType::MaxPiece) * 2;
     static constexpr int NUM_PLANES = (NUM_SQ * NUM_PT + 1);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
 
@@ -149,7 +152,7 @@ struct HalfKPFactorized {
 
 struct HalfKA {
     static constexpr int NUM_SQ = static_cast<int>(Square::NB);
-    static constexpr int NUM_PT = (static_cast<int>(PieceType::King) + 1) * 2;
+    static constexpr int NUM_PT = (static_cast<int>(PieceType::MaxPiece) + 1) * 2;
     static constexpr int NUM_PLANES = (NUM_SQ * NUM_PT + 1);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
 
@@ -213,7 +216,7 @@ struct HalfKAFactorized {
 struct HalfKAv2 {
     static constexpr int NUM_KSQ = static_cast<int>(Square::KNB);
     static constexpr int NUM_SQ = static_cast<int>(Square::NB);
-    static constexpr int NUM_PT = static_cast<int>(PieceType::King) * 2 + 1;
+    static constexpr int NUM_PT = (static_cast<int>(PieceType::MaxPiece) + 1) * 2 - (NUM_KSQ > 1);
     static constexpr int NUM_PLANES = NUM_SQ * NUM_PT + MAX_HAND_PIECES * (NUM_PT - 1);
     static constexpr int INPUTS = NUM_PLANES * NUM_KSQ;
 
@@ -222,7 +225,7 @@ struct HalfKAv2 {
     static int feature_index(Color color, Square ksq, Square sq, Piece p)
     {
         auto p_idx = static_cast<int>(type_of(p)) * 2 + (color_of(p) != color);
-        if (p_idx == NUM_PT)
+        if (NUM_PT % 2 && p_idx == NUM_PT)
             --p_idx; // pack the opposite king into the same NUM_SQ * NUM_SQ
         return static_cast<int>(orient_flip(color, sq)) + p_idx * NUM_SQ + map_king(ksq) * NUM_PLANES;
     }
@@ -264,7 +267,7 @@ struct HalfKAv2 {
 
 struct HalfKAv2Factorized {
     // Factorized features
-    static constexpr int NUM_PT = (static_cast<int>(PieceType::King) + 1) * 2;
+    static constexpr int NUM_PT = (static_cast<int>(PieceType::MaxPiece) + 1) * 2;
     static constexpr int PIECE_INPUTS = HalfKAv2::NUM_SQ * NUM_PT + MAX_HAND_PIECES * (NUM_PT - 2);
     static constexpr int INPUTS = HalfKAv2::INPUTS + PIECE_INPUTS;
 
