@@ -15,7 +15,7 @@ NUM_PLANES_VIRTUAL = NUM_SQ * NUM_PT_VIRTUAL + (NUM_PT_REAL - 1) * variant.POCKE
 NUM_INPUTS = NUM_PLANES_REAL * NUM_KSQ
 
 def orient(is_white_pov: bool, sq: int):
-  return sq
+  return sq % variant.FILES + (variant.RANKS - 1 - (sq // variant.FILES)) * variant.FILES if not is_white_pov else sq
 
 def halfka_idx(is_white_pov: bool, king_sq: int, sq: int, piece_type: int, color: bool):
   p_idx = (piece_type - 1) * 2 + (color != is_white_pov)
