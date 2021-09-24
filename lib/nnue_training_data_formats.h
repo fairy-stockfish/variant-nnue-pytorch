@@ -304,7 +304,7 @@ namespace chess
             if (type_of(piece) == PieceType::King)
             {
                 m_kings[static_cast<uint8_t>(color_of(piece))] = sq;
-                assert((sq == Square::NB) == (KING_SQUARES == 1));
+                assert(sq != Square::NB || KING_SQUARES == 1);
                 if (sq == Square::NB)
                     // No king
                     return;
