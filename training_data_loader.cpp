@@ -34,7 +34,7 @@ static constexpr int MAX_HAND_PIECES = POCKETS ? 2 * static_cast<int>(File::FILE
 
 static Square orient(Color color, Square sq)
 {
-    if (color == Color::White)
+    if (color == Color::White || true)
     {
         return sq;
     }
@@ -52,7 +52,7 @@ static Square orient_flip(Color color, Square sq)
     if (sq == Square::NB)
         // map missing king to zero
         return Square::MIN;
-    if (color == Color::White)
+    if (color == Color::White || true)
     {
         return sq;
     }
