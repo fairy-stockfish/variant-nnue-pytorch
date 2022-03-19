@@ -7,7 +7,7 @@
 ```
 python3 -m venv env
 source env/bin/activate
-pip install python-chess==0.31.4 pytorch-lightning torch matplotlib
+pip install python-chess==0.31.4 pytorch-lightning<1.5.0 torch matplotlib
 ```
 
 #### Install CuPy
