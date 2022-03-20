@@ -290,13 +290,13 @@ namespace chess
 
     struct Board
     {
-        constexpr Board() noexcept :
+        Board() noexcept :
             m_pieces{},
             m_pocketCount{},
             m_pieceCount{},
             m_kings{}
         {
-            std::fill_n(m_pieces, uint(Square::NB), Piece::None);
+            std::fill_n(m_pieces, static_cast<uint8_t>(Square::NB), Piece::None);
         }
 
         constexpr void place(Piece piece, Square sq)
@@ -345,10 +345,10 @@ namespace chess
         const Piece* piecesRaw() const;
 
     private:
-        Piece m_pieces[uint(Square::NB)];
-        uint8_t m_pocketCount[uint(Piece::NB)];
+        Piece m_pieces[(unsigned int)(Square::NB)];
+        uint8_t m_pocketCount[(unsigned int)(Piece::NB)];
         uint8_t m_pieceCount;
-        Square m_kings[uint(Color::NB)];
+        Square m_kings[(unsigned int)(Color::NB)];
     };
 
 
@@ -356,7 +356,7 @@ namespace chess
     {
         using BaseType = Board;
 
-        constexpr Position() noexcept :
+        Position() noexcept :
             Board(),
             m_sideToMove(Color::White),
             m_epSquare(Square::NB),
