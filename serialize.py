@@ -25,7 +25,7 @@ def ascii_hist(name, x, bins=6):
 
 # hardcoded for now
 VERSION = 0x7AF32F20
-DEFAULT_DESCRIPTION = "Network trained with the https://github.com/glinscott/nnue-pytorch trainer."
+DEFAULT_DESCRIPTION = "Network trained with the https://github.com/ianfab/variant-nnue-pytorch trainer."
 
 class NNUEWriter():
   """
