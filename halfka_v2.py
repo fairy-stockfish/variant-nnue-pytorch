@@ -29,11 +29,13 @@ def halfka_hand_idx(is_white_pov: bool, king_sq: int, handCount: int, piece_type
   return handCount + p_idx * variant.POCKETS + NUM_SQ * NUM_PT_REAL + king_sq * NUM_PLANES_REAL
 
 def map_king(sq: int):
+  # palace squares for Xiangi/Janggi
   if NUM_KSQ == 9 and NUM_KSQ != NUM_SQ:
-    if sq > NUM_SQ / 2:
+    if sq > variant.FILES * ((variant.RANKS + 1) // 2):
       # in order to allow unambiguously detecting opposing kings, just return value out of range
       return sq
-    return (sq + 3 * (sq // variant.FILES - 1)) % NUM_KSQ
+    # map accessible king squares skipping the gaps
+    return (sq - 6 * (sq // variant.FILES) - 3) % NUM_KSQ
   return sq % NUM_KSQ
 
 def halfka_psqts():

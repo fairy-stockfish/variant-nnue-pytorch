@@ -64,9 +64,10 @@ static Square orient_flip(Color color, Square sq)
 
 static int map_king(Square sq)
 {
-    // Xiangqi/Janggi
+    // palace squares for Xiangi/Janggi
+    // map accessible king squares skipping the gaps
     if (Square::KNB == Square(9) && Square::KNB != Square::NB)
-        return (int(sq) + 3 * (int(sq) / int(File::FILE_NB) - 1)) % int(Square::KNB);
+        return (int(sq) - 6 * (int(sq) / int(File::FILE_NB)) - 3) % int(Square::KNB);
 
     return int(sq) % int(Square::KNB);
 }
