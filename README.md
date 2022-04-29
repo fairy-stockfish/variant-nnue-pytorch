@@ -13,6 +13,10 @@ python3 -m venv env
 source env/bin/activate
 pip install python-chess==0.31.4 pytorch-lightning<1.5.0 torch matplotlib
 ```
+it also requires pytorch_lightning, which isn't packed up with pytorch:
+```
+pip install pytorch_lightning
+```
 
 #### Install CuPy
 First check what version of cuda is being used by pytorch.
