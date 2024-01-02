@@ -746,7 +746,7 @@ namespace binpack
 
             // Fullmove number, high bits
             // This was added as a fix for fullmove clock
-            // overflowing at 256. This change is backwards compatibile.
+            // overflowing at 256. This change is backwards compatible.
             fullmove |= stream.read_n_bit(8) << 8;
 
             // Read the highest bit of rule50. This was added as a fix for rule50

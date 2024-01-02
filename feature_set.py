@@ -16,7 +16,7 @@ def _calculate_features_hash(features):
 class FeatureSet:
     '''
     A feature set is nothing more than a list of named FeatureBlocks.
-    It itself functions similarily to a feature block, but we don't want to be
+    It itself functions similarly to a feature block, but we don't want to be
     explicit about it as we don't want it to be used as a building block for other
     feature sets. You can think of this class as a composite, but not the full extent.
     It is basically a concatenation of feature blocks.
