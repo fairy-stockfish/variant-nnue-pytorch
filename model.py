@@ -222,7 +222,7 @@ class NNUE(pl.LightningModule):
     new_feature_block = new_feature_set.features[0]
 
     # next(iter(new_feature_block.factors)) is the way to get the
-    # first item in a OrderedDict. (the ordered dict being str : int
+    # first item in an OrderedDict. (the ordered dict being str : int
     # mapping of the factor name to its size).
     # It is our new_feature_factor_name.
     # For example old_feature_block.name == "HalfKP"
