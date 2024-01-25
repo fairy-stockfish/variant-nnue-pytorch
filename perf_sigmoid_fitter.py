@@ -34,7 +34,7 @@ def do_plot(data, filename):
     # plot of the perf% by eval and the fitted sigmoid
     x = list(data.keys())
     y = [data[k][0] / data[k][1] for k in x]
-    # sigma is uncertainties, we con't care how correct it is.
+    # sigma is uncertainties, we don't care how correct it is.
     # The inverted counts are good enough.
     sigma = [1 / data[k][1] for k in x]
     k = fit_data(x, y, sigma)

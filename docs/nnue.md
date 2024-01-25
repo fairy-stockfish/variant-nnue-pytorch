@@ -1314,7 +1314,7 @@ void load_weights(
 ) {
     // This goes the same as in the case with sparse inputs, however
     // the weights matrix is no longer continuous and we need to fill
-    // some block indices to know which weights correspond to which ouputs.
+    // some block indices to know which weights correspond to which outputs.
     // This can be done either by discovering the zero blocks during loading,
     // or with a different serialized format with the block indices precomputed.
     // We will omit this here and just assume that layer.nnz_block_ids[input_id][4]
@@ -1612,7 +1612,7 @@ kernel(
 )
 ```
 
-PyTorch tensors can be easly passed to the kernel by using `.data_ptr()`, which results the pointer to the tensor. One must however ensure that the memory is contiguous.
+PyTorch tensors can be easily passed to the kernel by using `.data_ptr()`, which results the pointer to the tensor. One must however ensure that the memory is contiguous.
 
 ### Feature transformer
 
@@ -1692,7 +1692,7 @@ class SparseBatch(ctypes.Structure):
         white_features_indices_t = torch.from_numpy(np.ctypeslib.as_array(self.white_features_indices, shape=(self.size, self.max_active_features)))
         black_features_indices_t = torch.from_numpy(np.ctypeslib.as_array(self.black_features_indices, shape=(self.size, self.max_active_features)))
 
-        # The values are all ones, so we can create these tensors in place easly.
+        # The values are all ones, so we can create these tensors in place easily.
         # No need to go through a copy.
         white_features_values_t = torch.ones(self.num_active_white_features)
         black_features_values_t = torch.ones(self.num_active_black_features)
