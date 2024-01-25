@@ -40,7 +40,7 @@ def centralized_gradient(x, use_gc=True, gc_conv_only=False, dim=None):
 class Ranger(Optimizer):
 
     def __init__(self, params, lr=1e-3,                       # lr
-                 alpha=0.5, k=6, N_sma_threshhold=5,           # Ranger options
+                 alpha=0.5, k=6, N_sma_threshold=5,           # Ranger options
                  betas=(.95, 0.999), eps=1e-5, weight_decay=0,  # Adam options
                  # Gradient centralization on or off, applied to conv layers only or conv + fc layers
                  use_gc=True, gc_conv_only=False, gc_loc=True
@@ -63,12 +63,12 @@ class Ranger(Optimizer):
 
         # prep defaults and init torch.optim base
         defaults = dict(lr=lr, alpha=alpha, k=k, step_counter=0, betas=betas,
-                        N_sma_threshhold=N_sma_threshhold, eps=eps, weight_decay=weight_decay,
+                        N_sma_threshold=N_sma_threshold, eps=eps, weight_decay=weight_decay,
                         gc_dim=None)
         super().__init__(params, defaults)
 
         # adjustable threshold
-        self.N_sma_threshhold = N_sma_threshhold
+        self.N_sma_threshold = N_sma_threshold
 
         # look ahead params
 
@@ -164,7 +164,7 @@ class Ranger(Optimizer):
                     N_sma = N_sma_max - 2 * \
                         state['step'] * beta2_t / (1 - beta2_t)
                     buffered[1] = N_sma
-                    if N_sma > self.N_sma_threshhold:
+                    if N_sma > self.N_sma_threshold:
                         step_size = math.sqrt((1 - beta2_t) * (N_sma - 4) / (N_sma_max - 4) * (
                             N_sma - 2) / N_sma * N_sma_max / (N_sma_max - 2)) / (1 - beta1 ** state['step'])
                     else:
@@ -176,7 +176,7 @@ class Ranger(Optimizer):
                 #                     * group['lr'], p_data_fp32)
 
                 # apply lr
-                if N_sma > self.N_sma_threshhold:
+                if N_sma > self.N_sma_threshold:
                     denom = exp_avg_sq.sqrt().add_(group['eps'])
                     G_grad = exp_avg / denom
                 else:

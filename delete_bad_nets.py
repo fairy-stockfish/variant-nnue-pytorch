@@ -135,7 +135,7 @@ def show_help():
     print('    - a/b/c/d.ckpt')
     print('    - *.nnue')
     print('  - ordo.out')
-    print('    (in this case ony lines with engine name matching')
+    print('    (in this case only lines with engine name matching')
     print('     "run_[01]/nn-epoch[0-9]*\\.nnue" will be used.)')
 
 def main():
