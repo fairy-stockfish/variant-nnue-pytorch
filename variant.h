@@ -4,3 +4,4 @@
 #define PIECE_COUNT 32
 #define POCKETS false
 #define KING_SQUARES FILES * RANKS
+#define DATA_SIZE 512
