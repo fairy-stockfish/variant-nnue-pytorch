@@ -76,10 +76,15 @@ class TrainingDataProvider:
         self.random_fen_skipping = random_fen_skipping
         self.device = device
 
-        if batch_size:
-            self.stream = self.create_stream(self.feature_set, self.num_workers, self.filename, batch_size, cyclic, filtered, random_fen_skipping)
-        else:
-            self.stream = self.create_stream(self.feature_set, self.num_workers, self.filename, cyclic, filtered, random_fen_skipping)
+        self.stream = self.create_stream(
+            self.feature_set,
+            self.num_workers,
+            self.filename,
+            self.batch_size,
+            cyclic,
+            filtered,
+            random_fen_skipping
+        )
 
     def __iter__(self):
         return self
@@ -95,11 +100,20 @@ class TrainingDataProvider:
             raise StopIteration
 
     def __del__(self):
-        self.destroy_stream(self.stream)
+        if hasattr(self, "stream"):
+            self.destroy_stream(self.stream)
 
 create_sparse_batch_stream = dll.create_sparse_batch_stream
 create_sparse_batch_stream.restype = ctypes.c_void_p
-create_sparse_batch_stream.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_bool, ctypes.c_bool]
+create_sparse_batch_stream.argtypes = [
+    ctypes.c_char_p,  # feature_set
+    ctypes.c_int,     # num_workers
+    ctypes.c_char_p,  # filename
+    ctypes.c_int,     # batch_size
+    ctypes.c_bool,    # cyclic
+    ctypes.c_bool,    # filtered
+    ctypes.c_int      # random_fen_skipping
+]
 destroy_sparse_batch_stream = dll.destroy_sparse_batch_stream
 destroy_sparse_batch_stream.argtypes = [ctypes.c_void_p]
 
@@ -143,7 +157,7 @@ class SparseBatchDataset(torch.utils.data.IterableDataset):
 class FixedNumBatchesDataset(Dataset):
   def __init__(self, dataset, num_batches):
     super(FixedNumBatchesDataset, self).__init__()
-    self.dataset = dataset;
+    self.dataset = dataset
     self.iter = iter(self.dataset)
     self.num_batches = num_batches
 
