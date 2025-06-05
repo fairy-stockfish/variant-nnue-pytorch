@@ -5,30 +5,20 @@ This is the chess variant NNUE training code for [Fairy-Stockfish](https://githu
 # Setup
 
 Requires a [CUDA capable GPU](https://developer.nvidia.com/cuda-gpus).
+Note: you don't need to download the CUDA Toolkit
 
-#### Install PyTorch
+#### Package dependencies
 
-[PyTorch installation guide](https://pytorch.org/get-started/locally/)
+At least Python 3.9 needed.
 
 ```
 python3 -m venv env
 source env/bin/activate
-pip install python-chess==0.31.4 "pytorch-lightning<1.5.0" torch matplotlib
+pip install -r requirements.txt
 ```
 
-#### Install CuPy
-First check what version of cuda is being used by pytorch.
-```
-import torch
-torch.version.cuda
-```
-Then install CuPy with the matching CUDA version.
-```
-pip install cupy-cudaXXX
-```
-where XXX corresponds to the first 3 digits of the CUDA version. For example `cupy-cuda112` for CUDA 11.2.
-
-CuPy might use the PyTorch's private installation of CUDA, but it is better to install the matching version of CUDA separately. [CUDA Downloads](https://developer.nvidia.com/cuda-downloads)
+PyTorch with CUDA 11.8 will be automatically installed, along with the matching CuPy version
+If your GPU is CUDA 12.8 capable you can use requirements-CUDA128.txt instead of requirements.txt
 
 #### Build the fast DataLoader
 This requires a C++17 compiler and cmake.
