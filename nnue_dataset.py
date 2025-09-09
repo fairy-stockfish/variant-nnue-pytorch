@@ -6,12 +6,43 @@ import sys
 import glob
 from torch.utils.data import Dataset
 
-local_dllpath = [n for n in glob.glob('./*training_data_loader.*') if n.endswith('.so') or n.endswith('.dll') or n.endswith('.dylib')]
-if not local_dllpath:
-    print('Cannot find data_loader shared library.')
-    sys.exit(1)
-dllpath = os.path.abspath(local_dllpath[0])
-dll = ctypes.cdll.LoadLibrary(dllpath)
+def _get_dll_path():
+    """Get the path to the training data loader shared library."""
+    local_dllpath = [n for n in glob.glob('./*training_data_loader.*') if n.endswith('.so') or n.endswith('.dll') or n.endswith('.dylib')]
+    if not local_dllpath:
+        print('Cannot find data_loader shared library.')
+        sys.exit(1)
+    return os.path.abspath(local_dllpath[0])
+
+def _load_dll():
+    """Load the training data loader shared library. Called per-process to avoid pickling issues."""
+    dllpath = _get_dll_path()
+    return ctypes.cdll.LoadLibrary(dllpath)
+
+def _setup_dll_functions(dll):
+    """Setup ctypes function signatures for the dll. Called per-process to avoid pickling issues."""
+    create_sparse_batch_stream = dll.create_sparse_batch_stream
+    create_sparse_batch_stream.restype = ctypes.c_void_p
+    create_sparse_batch_stream.argtypes = [
+        ctypes.c_char_p,  # feature_set
+        ctypes.c_int,     # num_workers
+        ctypes.c_char_p,  # filename
+        ctypes.c_int,     # batch_size
+        ctypes.c_bool,    # cyclic
+        ctypes.c_bool,    # filtered
+        ctypes.c_int      # random_fen_skipping
+    ]
+    
+    destroy_sparse_batch_stream = dll.destroy_sparse_batch_stream
+    destroy_sparse_batch_stream.argtypes = [ctypes.c_void_p]
+    
+    fetch_next_sparse_batch = dll.fetch_next_sparse_batch
+    fetch_next_sparse_batch.restype = SparseBatchPtr
+    fetch_next_sparse_batch.argtypes = [ctypes.c_void_p]
+    
+    destroy_sparse_batch = dll.destroy_sparse_batch
+    
+    return create_sparse_batch_stream, destroy_sparse_batch_stream, fetch_next_sparse_batch, destroy_sparse_batch
 
 class SparseBatch(ctypes.Structure):
     _fields_ = [
@@ -64,10 +95,6 @@ class TrainingDataProvider:
         device='cpu'):
 
         self.feature_set = feature_set.encode('utf-8')
-        self.create_stream = create_stream
-        self.destroy_stream = destroy_stream
-        self.fetch_next = fetch_next
-        self.destroy_part = destroy_part
         self.filename = filename.encode('utf-8')
         self.cyclic = cyclic
         self.num_workers = num_workers
@@ -76,61 +103,77 @@ class TrainingDataProvider:
         self.random_fen_skipping = random_fen_skipping
         self.device = device
 
-        self.stream = self.create_stream(
+        # Store function references but don't use them yet - they'll be set up when needed
+        self._create_stream_func = None
+        self._destroy_stream_func = None
+        self._fetch_next_func = None
+        self._destroy_part_func = None
+        self.stream = None
+        
+        # Initialize the dll and stream
+        self._setup_dll()
+
+    def _setup_dll(self):
+        """Setup the DLL and create the stream. This is called per-instance to avoid pickling issues."""
+        dll = _load_dll()
+        self._create_stream_func, self._destroy_stream_func, self._fetch_next_func, self._destroy_part_func = _setup_dll_functions(dll)
+        
+        self.stream = self._create_stream_func(
             self.feature_set,
             self.num_workers,
             self.filename,
             self.batch_size,
-            cyclic,
-            filtered,
-            random_fen_skipping
+            self.cyclic,
+            self.filtered,
+            self.random_fen_skipping
         )
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        v = self.fetch_next(self.stream)
+        if self.stream is None:
+            # If stream is None (e.g., after unpickling), recreate it
+            self._setup_dll()
+            
+        v = self._fetch_next_func(self.stream)
 
         if v:
             tensors = v.contents.get_tensors(self.device)
-            self.destroy_part(v)
+            self._destroy_part_func(v)
             return tensors
         else:
             raise StopIteration
 
     def __del__(self):
-        if hasattr(self, "stream"):
-            self.destroy_stream(self.stream)
-
-create_sparse_batch_stream = dll.create_sparse_batch_stream
-create_sparse_batch_stream.restype = ctypes.c_void_p
-create_sparse_batch_stream.argtypes = [
-    ctypes.c_char_p,  # feature_set
-    ctypes.c_int,     # num_workers
-    ctypes.c_char_p,  # filename
-    ctypes.c_int,     # batch_size
-    ctypes.c_bool,    # cyclic
-    ctypes.c_bool,    # filtered
-    ctypes.c_int      # random_fen_skipping
-]
-destroy_sparse_batch_stream = dll.destroy_sparse_batch_stream
-destroy_sparse_batch_stream.argtypes = [ctypes.c_void_p]
-
-fetch_next_sparse_batch = dll.fetch_next_sparse_batch
-fetch_next_sparse_batch.restype = SparseBatchPtr
-fetch_next_sparse_batch.argtypes = [ctypes.c_void_p]
-destroy_sparse_batch = dll.destroy_sparse_batch
-
+        if hasattr(self, "stream") and self.stream is not None and hasattr(self, "_destroy_stream_func"):
+            self._destroy_stream_func(self.stream)
+            
+    def __getstate__(self):
+        """Custom pickling - exclude unpicklable ctypes objects."""
+        state = self.__dict__.copy()
+        # Remove unpicklable ctypes objects
+        state['_create_stream_func'] = None
+        state['_destroy_stream_func'] = None
+        state['_fetch_next_func'] = None
+        state['_destroy_part_func'] = None
+        state['stream'] = None
+        return state
+        
+    def __setstate__(self, state):
+        """Custom unpickling - restore the object and reinitialize ctypes objects."""
+        self.__dict__.update(state)
+        # Don't setup dll here - it will be done lazily in __next__ when needed
 
 class SparseBatchProvider(TrainingDataProvider):
     def __init__(self, feature_set, filename, batch_size, cyclic=True, num_workers=1, filtered=False, random_fen_skipping=0, device='cpu'):
+        # Pass None for the function parameters since we'll set them up in _setup_dll
         super(SparseBatchProvider, self).__init__(
             feature_set,
-            create_sparse_batch_stream,
-            destroy_sparse_batch_stream,
-            fetch_next_sparse_batch,
-            destroy_sparse_batch,
+            None,  # create_stream - will be set in _setup_dll
+            None,  # destroy_stream - will be set in _setup_dll
+            None,  # fetch_next - will be set in _setup_dll
+            None,  # destroy_part - will be set in _setup_dll
             filename,
             cyclic,
             num_workers,
