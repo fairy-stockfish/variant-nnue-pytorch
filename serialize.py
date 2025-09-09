@@ -219,7 +219,9 @@ def main():
     nnue = M.NNUE.load_from_checkpoint(args.source, feature_set=feature_set)
     nnue.eval()
   elif args.source.endswith('.pt'):
-    nnue = torch.load(args.source)
+    # Load with weights_only=False to avoid safe_globals complexity
+    # This is safe since we trust the checkpoint source
+    nnue = torch.load(args.source, weights_only=False)
   elif args.source.endswith('.nnue'):
     with open(args.source, 'rb') as f:
       reader = NNUEReader(f, feature_set)

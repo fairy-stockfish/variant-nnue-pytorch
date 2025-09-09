@@ -51,7 +51,9 @@ def main():
     nnue = M.NNUE(feature_set=feature_set, lambda_=args.lambda_)
     nnue.cuda()
   else:
-    nnue = torch.load(args.resume_from_model)
+    # Load with weights_only=False to avoid safe_globals complexity
+    # This is safe since we trust the checkpoint source
+    nnue = torch.load(args.resume_from_model, weights_only=False)
     nnue.set_feature_set(feature_set)
     nnue.lambda_ = args.lambda_
     nnue.cuda()
