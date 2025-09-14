@@ -3,3 +3,9 @@ env/
 build/
 logs/
 venv*
+
+# Compiled data loader artifacts
+*.so
+*.dll
+*.lib
+*.pdb
