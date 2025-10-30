@@ -74,7 +74,7 @@ def main():
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--net", type=str, help="path to a .nnue net")
     parser.add_argument("--engine", type=str, help="path to stockfish")
-    parser.add_argument("--data", type=str, help="path to a .bin or .binpack dataset")
+    parser.add_argument("--data", type=str, help="path to a .bin dataset")
     parser.add_argument("--checkpoint", type=str, help="Optional checkpoint (used instead of nnue for local eval)")
     parser.add_argument("--count", type=int, default=100, help="number of datapoints to process")
     features.add_argparse_args(parser)

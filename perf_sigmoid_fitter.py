@@ -81,7 +81,7 @@ def gather_statistics_from_batches(batches, bucket_size):
 
 def gather_statistics_from_data(filename, count, bucket_size):
     '''
-    Takes a .bin or .binpack file and produces perf% statistics
+    Takes a .bin file and produces perf% statistics
     The result is a dictionary of the form { eval : (perf%, count) }
     '''
     batch_size = 8192

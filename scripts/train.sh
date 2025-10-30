@@ -1,8 +1,8 @@
 #!/bin/bash
 
 python train.py \
- ../data/large_gensfen_multipvdiff_100_d9.binpack \
- ../data/large_gensfen_multipvdiff_100_d9.binpack \
+ ../data/large_gensfen_multipvdiff_100_d9.bin \
+ ../data/large_gensfen_multipvdiff_100_d9.bin \
  --gpus 1 \
  --threads 2 \
  --batch-size 8096 \

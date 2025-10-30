@@ -440,7 +440,7 @@ namespace chess
 
 }
 
-namespace binpack
+namespace bin
 {
     constexpr std::size_t KiB = 1024;
     constexpr std::size_t MiB = (1024*KiB);
