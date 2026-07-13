@@ -1,0 +1,11 @@
+chess==1.11.2
+matplotlib==3.10.8
+numpy==1.26.4
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
+torchaudio==2.7.1+cpu
+pytorch-lightning==1.9.5
+torchmetrics==0.11.4
+tensorboard==2.20.0
+pytest==8.3.5

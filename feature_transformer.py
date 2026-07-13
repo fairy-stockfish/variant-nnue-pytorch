@@ -1,8 +1,53 @@
 import torch
 from torch import nn
 from torch import autograd
-import cupy as cp
+import torch.nn.functional as F
 import math
+
+try:
+    import cupy as cp
+except ImportError:
+    cp = None
+
+
+def feature_transformer_slice_torch(feature_indices, feature_values, weight, bias):
+    """Portable sparse feature transform used on CPU or without CuPy.
+
+    The custom CUDA kernels remain the fast path. This implementation uses
+    ordinary PyTorch operations, so autograd owns the backward pass and CPU
+    training does not require a CUDA runtime or CuPy installation.
+    """
+    if feature_indices.ndim != 2 or feature_values.shape != feature_indices.shape:
+        raise ValueError('feature indices and values must be equally shaped matrices')
+    if feature_indices.dtype != torch.int32:
+        raise TypeError('feature indices must use torch.int32')
+    if feature_values.dtype != torch.float32 or weight.dtype != torch.float32 or bias.dtype != torch.float32:
+        raise TypeError('feature values, weights, and bias must use torch.float32')
+    if feature_indices.device != feature_values.device or weight.device != feature_indices.device or bias.device != feature_indices.device:
+        raise ValueError('feature inputs and parameters must be on the same device')
+
+    if torch.any(feature_indices < -1):
+        raise ValueError('feature indices may only use -1 as the empty sentinel')
+
+    # The native format promises that -1 terminates a row. cumprod preserves
+    # that exact behavior even if malformed input contains data after it.
+    valid = torch.cumprod((feature_indices != -1).to(dtype=torch.int32), dim=1).to(dtype=torch.bool)
+    safe_indices = feature_indices.clamp_min(0).to(dtype=torch.long)
+    scaled_values = torch.where(valid, feature_values, torch.zeros_like(feature_values))
+    # embedding_bag performs the weighted sparse sum without materializing a
+    # batch x active_features x output_size tensor. This keeps CPU training
+    # usable at production batch sizes.
+    output = F.embedding_bag(
+        safe_indices,
+        weight,
+        mode='sum',
+        per_sample_weights=scaled_values,
+    )
+    return output + bias
+
+
+def _use_custom_cuda_kernel(*tensors):
+    return cp is not None and all(tensor.is_cuda for tensor in tensors)
 
 def _find_nearest_divisor(value, target):
     divisors = []
@@ -500,7 +545,9 @@ class FeatureTransformerSlice(nn.Module):
         self.bias = nn.Parameter(torch.rand(num_outputs, dtype=torch.float32) * (2 * sigma) - sigma)
 
     def forward(self, feature_indices, feature_values):
-        return FeatureTransformerSliceFunction.apply(feature_indices, feature_values, self.weight, self.bias)
+        if _use_custom_cuda_kernel(feature_indices, feature_values, self.weight, self.bias):
+            return FeatureTransformerSliceFunction.apply(feature_indices, feature_values, self.weight, self.bias)
+        return feature_transformer_slice_torch(feature_indices, feature_values, self.weight, self.bias)
 
 class DoubleFeatureTransformerSlice(nn.Module):
     def __init__(self, num_inputs, num_outputs):
@@ -513,7 +560,19 @@ class DoubleFeatureTransformerSlice(nn.Module):
         self.bias = nn.Parameter(torch.rand(num_outputs, dtype=torch.float32) * (2 * sigma) - sigma)
 
     def forward(self, feature_indices_0, feature_values_0, feature_indices_1, feature_values_1):
-        return DoubleFeatureTransformerSliceFunction.apply(feature_indices_0, feature_values_0, feature_indices_1, feature_values_1, self.weight, self.bias)
+        if _use_custom_cuda_kernel(
+            feature_indices_0,
+            feature_values_0,
+            feature_indices_1,
+            feature_values_1,
+            self.weight,
+            self.bias,
+        ):
+            return DoubleFeatureTransformerSliceFunction.apply(feature_indices_0, feature_values_0, feature_indices_1, feature_values_1, self.weight, self.bias)
+        return (
+            feature_transformer_slice_torch(feature_indices_0, feature_values_0, self.weight, self.bias),
+            feature_transformer_slice_torch(feature_indices_1, feature_values_1, self.weight, self.bias),
+        )
 
 if __name__ == '__main__':
     import time

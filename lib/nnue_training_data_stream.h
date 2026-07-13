@@ -78,7 +78,19 @@ namespace training_data {
             {
                 if(m_stream.read(reinterpret_cast<char*>(&e), sizeof(nodchip::PackedSfenValue)))
                 {
-                    auto entry = packedSfenValueToTrainingDataEntry(e);
+                    TrainingDataEntry entry;
+                    try
+                    {
+                        entry = packedSfenValueToTrainingDataEntry(e);
+                    }
+                    catch (const std::exception& error)
+                    {
+                        throw std::invalid_argument(
+                            "invalid Legacy72 record " + std::to_string(m_record_index)
+                            + ": " + error.what()
+                        );
+                    }
+                    ++m_record_index;
                     if (!m_skipPredicate || !m_skipPredicate(entry))
                         return entry;
                 }
@@ -116,6 +128,7 @@ namespace training_data {
         bool m_eof;
         bool m_cyclic;
         std::function<bool(const TrainingDataEntry&)> m_skipPredicate;
+        std::uint64_t m_record_index{0};
     };
 
     inline std::unique_ptr<BasicSfenInputStream> open_sfen_input_file(const std::string& filename, bool cyclic, std::function<bool(const TrainingDataEntry&)> skipPredicate = nullptr)

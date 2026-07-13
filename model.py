@@ -72,7 +72,9 @@ class LayerStacks(nn.Module):
 
   def forward(self, x, ls_indices):
     # precompute and cache the offset for gathers
-    if self.idx_offset == None or self.idx_offset.shape[0] != x.shape[0]:
+    if (self.idx_offset is None
+        or self.idx_offset.shape[0] != x.shape[0]
+        or self.idx_offset.device != ls_indices.device):
       self.idx_offset = torch.arange(0,x.shape[0]*self.count,self.count, device=ls_indices.device)
 
     indices = ls_indices.flatten() + self.idx_offset
@@ -212,7 +214,7 @@ class NNUE(pl.LightningModule):
 
     # TODO: Implement this for more complicated conversions.
     #       Currently we support only a single feature block.
-    if len(self.feature_set.features) > 1:
+    if len(self.feature_set.features) != 1 or len(new_feature_set.features) != 1:
       raise Exception('Cannot change feature set from {} to {}.'.format(self.feature_set.name, new_feature_set.name))
 
     # Currently we only support conversion for feature sets with
@@ -237,6 +239,7 @@ class NNUE(pl.LightningModule):
       padding = weights.new_zeros((new_feature_block.num_virtual_features, weights.shape[1]))
       weights = torch.cat([weights, padding], dim=0)
       self.input.weight = nn.Parameter(weights)
+      self.input.num_inputs = new_feature_set.num_features
       self.feature_set = new_feature_set
     else:
       raise Exception('Cannot change feature set from {} to {}.'.format(self.feature_set.name, new_feature_set.name))

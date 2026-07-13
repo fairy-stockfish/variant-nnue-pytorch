@@ -27,6 +27,7 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 #include <bitset>
+#include <cstdint>
 
 #include <cstdio>
 #include <cassert>
@@ -37,6 +38,7 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <fstream>
 #include <cstring>
 #include <iostream>
+#include <iterator>
 #include <set>
 #include <cstdio>
 #include <cassert>
@@ -47,6 +49,7 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <thread>
 #include <mutex>
 #include <random>
+#include <stdexcept>
 
 #include "rng.h"
 
@@ -298,14 +301,23 @@ namespace chess
 
         constexpr void place(Piece piece, Square sq)
         {
+            const auto piece_index = static_cast<std::uint8_t>(piece);
+            const auto square_index = static_cast<std::uint8_t>(sq);
+            if (piece_index >= static_cast<std::uint8_t>(Piece::NB))
+                throw std::invalid_argument("invalid piece in packed position");
+            if (square_index > static_cast<std::uint8_t>(Square::NB))
+                throw std::invalid_argument("square outside packed-position board");
+
             if (type_of(piece) == PieceType::King)
             {
                 m_kings[static_cast<uint8_t>(color_of(piece))] = sq;
-                assert(sq != Square::NB || KING_SQUARES == 1);
                 if (sq == Square::NB)
-                    // No king
+                    // Atomic terminal positions may have an exploded king.
                     return;
             }
+            else if (sq == Square::NB)
+                throw std::invalid_argument("only a missing king may use Square::NB");
+
             auto oldPiece = m_pieces[static_cast<uint8_t>(sq)];
             m_pieces[static_cast<uint8_t>(sq)] = piece;
             if (oldPiece != Piece::None)
@@ -529,7 +541,14 @@ namespace bin
         {
             // Set the memory to store the data in advance.
             // Assume that memory is cleared to 0.
-            void  set_data(uint8_t* data_) { data = data_; reset(); }
+            void set_data(uint8_t* data_, int bit_limit_ = DATA_SIZE)
+            {
+                if (data_ == nullptr || bit_limit_ < 0)
+                    throw std::invalid_argument("invalid packed-position bit stream");
+                data = data_;
+                bit_limit = bit_limit_;
+                reset();
+            }
 
             // Get the pointer passed in set_data().
             uint8_t* get_data() const { return data; }
@@ -543,6 +562,8 @@ namespace bin
             // Get 1 bit from the stream.
             int read_one_bit()
             {
+                if (data == nullptr || bit_cursor >= bit_limit)
+                    throw std::invalid_argument("packed position exceeds its bit range");
                 int b = (data[bit_cursor / 8] >> (bit_cursor & 7)) & 1;
                 ++bit_cursor;
 
@@ -553,6 +574,8 @@ namespace bin
             // Reverse conversion of write_n_bit().
             int read_n_bit(int n)
             {
+                if (n < 0 || n > 31)
+                    throw std::invalid_argument("invalid packed-position bit width");
                 int result = 0;
                 for (int i = 0; i < n; ++i)
                     result |= read_one_bit() ? (1 << i) : 0;
@@ -562,10 +585,11 @@ namespace bin
 
         private:
             // Next bit position to read/write.
-            int bit_cursor;
+            int bit_cursor = 0;
+            int bit_limit = 0;
 
             // data entity
-            uint8_t* data;
+            uint8_t* data = nullptr;
         };
 
 
@@ -646,28 +670,30 @@ namespace bin
             // Read one board piece from stream
             [[nodiscard]] chess::Piece read_board_piece_from_stream()
             {
-                int pr = 0;
                 int code = 0, bits = 0;
-                while (true)
+                while (bits < 5)
                 {
                     code |= stream.read_one_bit() << bits;
                     ++bits;
 
-                    assert(bits <= 6);
-
-                    for (pr = 0; pr <= static_cast<int>(chess::PieceType::None); ++pr)
+                    for (std::size_t pr = 0; pr < std::size(huffman_table); ++pr)
                         if (huffman_table[pr].code == code
                             && huffman_table[pr].bits == bits)
-                            goto Found;
+                        {
+                            if (pr == 0)
+                                return chess::Piece::None;
+
+                            const auto piece_type = static_cast<chess::PieceType>(pr - 1);
+                            // Kings are encoded separately before the board and
+                            // the remaining legacy table entries are reserved.
+                            if (piece_type >= chess::PieceType::King)
+                                throw std::invalid_argument("invalid packed-position Huffman piece code");
+
+                            const auto color = static_cast<chess::Color>(stream.read_one_bit());
+                            return make_piece(piece_type, color);
+                        }
                 }
-            Found:;
-                if (pr == 0)
-                    return chess::Piece::None;
-
-                // first and second flag
-                chess::Color c = (chess::Color)stream.read_one_bit();
-
-                return make_piece(static_cast<chess::PieceType>(pr - 1), c);
+                throw std::invalid_argument("invalid packed-position Huffman code");
             }
         };
 
@@ -676,16 +702,33 @@ namespace bin
         {
             SfenPacker packer;
             auto& stream = packer.stream;
-            stream.set_data(const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&sfen)));
+            stream.set_data(
+                const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(&sfen)),
+                DATA_SIZE
+            );
 
             chess::Position pos{};
 
             // Active color
             pos.setSideToMove((chess::Color)stream.read_one_bit());
 
-            // First the position of the ball
-            pos.place(make_piece(chess::PieceType::King, chess::Color::White), static_cast<chess::Square>(stream.read_n_bit(7)));
-            pos.place(make_piece(chess::PieceType::King, chess::Color::Black), static_cast<chess::Square>(stream.read_n_bit(7)));
+            // First the king squares. Square::NB denotes an exploded king in
+            // an Atomic terminal position; larger 7-bit values are corrupt.
+            const auto white_king_raw = stream.read_n_bit(7);
+            const auto black_king_raw = stream.read_n_bit(7);
+            if (white_king_raw > static_cast<int>(chess::Square::NB)
+                || black_king_raw > static_cast<int>(chess::Square::NB))
+                throw std::invalid_argument("packed king square is outside the board");
+
+            const auto white_king = static_cast<chess::Square>(white_king_raw);
+            const auto black_king = static_cast<chess::Square>(black_king_raw);
+            if (white_king != chess::Square::NB
+                && black_king != chess::Square::NB
+                && white_king == black_king)
+                throw std::invalid_argument("packed kings occupy the same square");
+
+            pos.place(make_piece(chess::PieceType::King, chess::Color::White), white_king);
+            pos.place(make_piece(chess::PieceType::King, chess::Color::Black), black_king);
 
             // Piece placement
             for (chess::Rank r = chess::Rank::RANK_MAX; r >= chess::Rank::RANK_1; --r)
@@ -708,7 +751,16 @@ namespace bin
 
             for (chess::Color c : { chess::Color::White, chess::Color::Black })
                 for (chess::PieceType pt = chess::PieceType::Pawn; pt <= chess::PieceType::MaxPiece; ++pt)
-                    pos.setHandCount(make_piece(pt, c), static_cast<int>(stream.read_n_bit(DATA_SIZE > 512 ? 7 : 5)));
+                {
+                    const int hand_count = stream.read_n_bit(DATA_SIZE > 512 ? 7 : 5);
+                    if (!POCKETS && hand_count != 0)
+                        throw std::invalid_argument("non-pocket legacy position contains hand pieces");
+                    if (POCKETS
+                        && (pt == chess::PieceType::King
+                            || hand_count > 2 * static_cast<int>(chess::File::FILE_NB)))
+                        throw std::invalid_argument("invalid packed hand-piece count");
+                    pos.setHandCount(make_piece(pt, c), static_cast<std::uint8_t>(hand_count));
+                }
 
             // Castling availability.
             chess::CastlingRights cr = chess::CastlingRights::None;
@@ -728,7 +780,10 @@ namespace bin
 
             // En passant square. Ignore if no pawn capture is possible
             if (stream.read_one_bit()) {
-                chess::Square ep_square = static_cast<chess::Square>(stream.read_n_bit(7));
+                const int ep_square_raw = stream.read_n_bit(7);
+                if (ep_square_raw >= static_cast<int>(chess::Square::NB))
+                    throw std::invalid_argument("packed en-passant square is outside the board");
+                chess::Square ep_square = static_cast<chess::Square>(ep_square_raw);
                 pos.setEpSquare(ep_square);
             }
 
@@ -751,8 +806,6 @@ namespace bin
             pos.setFullMove(fullmove);
             pos.setRule50Counter(rule50);
 
-            assert(stream.get_cursor() <= DATA_SIZE);
-
             return pos;
         }
     }
@@ -766,12 +819,72 @@ namespace bin
         std::int16_t result;
     };
 
+    inline void validate_training_move(const chess::Position& pos, const chess::Move& move)
+    {
+        const auto from = static_cast<unsigned int>(move.from);
+        const auto to = static_cast<unsigned int>(move.to);
+        if (from >= static_cast<unsigned int>(chess::Square::NB)
+            || to >= static_cast<unsigned int>(chess::Square::NB)
+            || from == to)
+            throw std::invalid_argument("invalid move squares in legacy training record");
+
+        const auto mover = pos.pieceAt(move.from);
+        const auto target = pos.pieceAt(move.to);
+        if (mover == chess::Piece::None || color_of(mover) != pos.sideToMove())
+            throw std::invalid_argument("legacy training move has no side-to-move piece at its origin");
+
+        if (move.type == chess::MoveType::Castle)
+        {
+            if (type_of(mover) != chess::PieceType::King
+                || target == chess::Piece::None
+                || color_of(target) != pos.sideToMove()
+                || type_of(target) != chess::PieceType::Rook)
+                throw std::invalid_argument("invalid castling move in legacy training record");
+            return;
+        }
+
+        if (target != chess::Piece::None && color_of(target) == pos.sideToMove())
+            throw std::invalid_argument("legacy training move captures a friendly piece");
+
+        if (move.type == chess::MoveType::EnPassant)
+        {
+            if (type_of(mover) != chess::PieceType::Pawn || target != chess::Piece::None)
+                throw std::invalid_argument("invalid en-passant move in legacy training record");
+            return;
+        }
+
+        const int destination_rank = static_cast<int>(move.to)
+            / static_cast<int>(chess::File::FILE_NB);
+        const bool reaches_last_rank = destination_rank == 0
+            || destination_rank == static_cast<int>(chess::Rank::RANK_MAX);
+        if (move.type == chess::MoveType::Promotion)
+        {
+            const auto promoted_type = type_of(move.promotedPiece);
+            if (type_of(mover) != chess::PieceType::Pawn
+                || !reaches_last_rank
+                || move.promotedPiece == chess::Piece::None
+                || color_of(move.promotedPiece) != pos.sideToMove()
+                || promoted_type < chess::PieceType::Knight
+                || promoted_type > chess::PieceType::Queen)
+                throw std::invalid_argument("invalid promotion move in legacy training record");
+            return;
+        }
+
+        if (move.type != chess::MoveType::Normal
+            || (type_of(mover) == chess::PieceType::Pawn && reaches_last_rank))
+            throw std::invalid_argument("invalid normal move in legacy training record");
+    }
+
     [[nodiscard]] inline TrainingDataEntry packedSfenValueToTrainingDataEntry(const nodchip::PackedSfenValue& psv)
     {
+        if (psv.game_result < -1 || psv.game_result > 1)
+            throw std::invalid_argument("legacy training result must be -1, 0, or 1");
+
         TrainingDataEntry ret;
 
         ret.pos = nodchip::pos_from_packed_sfen(psv.sfen);
         ret.move = psv.move.toMove();
+        validate_training_move(ret.pos, ret.move);
         ret.score = psv.score;
         ret.ply = psv.gamePly;
         ret.result = psv.game_result;

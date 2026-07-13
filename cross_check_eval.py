@@ -87,6 +87,10 @@ def main():
         model = NNUE.load_from_checkpoint(args.checkpoint, feature_set=feature_set)
     else:
         model = read_model(args.net, feature_set)
+    # NNUE files contain only coalesced real features. The reader deliberately
+    # keeps them unfactorized outside the training-continuation path, so batch
+    # construction must follow the model's actual layout.
+    feature_set = model.feature_set
     model.eval()
     model.cuda()
     fen_batch_provider = make_fen_batch_provider(args.data, batch_size)

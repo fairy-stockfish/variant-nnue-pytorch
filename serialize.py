@@ -1,8 +1,8 @@
 import argparse
 import features
-import math
 import model as M
 import numpy
+import os
 import struct
 import torch
 from torch import nn
@@ -26,6 +26,22 @@ def ascii_hist(name, x, bins=6):
 # hardcoded for now
 VERSION = 0x7AF32F20
 DEFAULT_DESCRIPTION = "Network trained with the https://github.com/ianfab/variant-nnue-pytorch trainer."
+MAX_DESCRIPTION_LENGTH = 1024 * 1024
+
+
+class NNUEFormatError(ValueError):
+  pass
+
+
+def get_unfactorized_feature_set(feature_set):
+  """Return the real feature layout stored by an NNUE file.
+
+  Virtual factorizer rows only exist while training and are coalesced away by
+  the writer. Consequently an on-disk HalfKAv2 net always contains HalfKAv2,
+  never HalfKAv2^, even when it was trained with factorization enabled.
+  """
+  names = [feature.get_main_factor_name() for feature in feature_set.features]
+  return features.get_feature_set_from_name('+'.join(names))
 
 class NNUEWriter():
   """
@@ -33,7 +49,10 @@ class NNUEWriter():
   """
   def __init__(self, model, description=None):
     if description is None:
-        description = DEFAULT_DESCRIPTION
+        saved_description = getattr(model, 'nnue_description', None)
+        description = DEFAULT_DESCRIPTION if saved_description is None else saved_description
+    if not isinstance(description, str):
+        raise TypeError('NNUE description must be text')
 
     self.buf = bytearray()
 
@@ -49,18 +68,24 @@ class NNUEWriter():
 
   @staticmethod
   def fc_hash(model):
+    return NNUEWriter.fc_hash_for_num_ls_buckets(model.num_ls_buckets)
+
+  @staticmethod
+  def fc_hash_for_num_ls_buckets(num_ls_buckets):
+    # The legacy hash describes one stack; the bucket count is represented by
+    # repeating that hashed payload in the file rather than mixing the count.
+    _ = num_ls_buckets
     # InputSlice hash
     prev_hash = 0xEC42E90D
     prev_hash ^= (M.L1 * 2)
 
     # Fully connected layers
-    layers = [model.layer_stacks.l1, model.layer_stacks.l2, model.layer_stacks.output]
-    for layer in layers:
+    for output_size in (M.L2, M.L3, 1):
       layer_hash = 0xCC03DAE4
-      layer_hash += layer.out_features // model.num_ls_buckets
+      layer_hash += output_size
       layer_hash ^= prev_hash >> 1
       layer_hash ^= (prev_hash << 31) & 0xFFFFFFFF
-      if layer.out_features // model.num_ls_buckets != 1:
+      if output_size != 1:
         # Clipped ReLU hash
         layer_hash = (layer_hash + 0x538D24C7) & 0xFFFFFFFF
       prev_hash = layer_hash
@@ -70,6 +95,8 @@ class NNUEWriter():
     self.int32(VERSION) # version
     self.int32(fc_hash ^ model.feature_set.hash ^ (M.L1*2)) # halfkp network hash
     encoded_description = description.encode('utf-8')
+    if len(encoded_description) > MAX_DESCRIPTION_LENGTH:
+      raise ValueError('NNUE description exceeds {} bytes'.format(MAX_DESCRIPTION_LENGTH))
     self.int32(len(encoded_description)) # Network definition
     self.buf.extend(encoded_description)
 
@@ -78,15 +105,15 @@ class NNUEWriter():
     # int16 weight = round(x * 127)
     layer = model.input
     bias = layer.bias.data[:M.L1]
-    bias = bias.mul(127).round().to(torch.int16)
+    bias = bias.mul(127).round().to(torch.int16).cpu()
     ascii_hist('ft bias:', bias.numpy())
     self.buf.extend(bias.flatten().numpy().tobytes())
 
     weight = M.coalesce_ft_weights(model, layer)
     weight0 = weight[:, :M.L1]
     psqtweight0 = weight[:, M.L1:]
-    weight = weight0.mul(127).round().to(torch.int16)
-    psqtweight = psqtweight0.mul(9600).round().to(torch.int32) # kPonanzaConstant * FV_SCALE = 9600
+    weight = weight0.mul(127).round().to(torch.int16).cpu()
+    psqtweight = psqtweight0.mul(9600).round().to(torch.int32).cpu() # kPonanzaConstant * FV_SCALE = 9600
     ascii_hist('ft weight:', weight.numpy())
     # weights stored as [41024][256]
     self.buf.extend(weight.flatten().numpy().tobytes())
@@ -106,37 +133,43 @@ class NNUEWriter():
     # int32 bias = round(x * kBiasScale)
     # int8 weight = round(x * kWeightScale)
     bias = layer.bias.data
-    bias = bias.mul(kBiasScale).round().to(torch.int32)
+    bias = bias.mul(kBiasScale).round().to(torch.int32).cpu()
     ascii_hist('fc bias:', bias.numpy())
     self.buf.extend(bias.flatten().numpy().tobytes())
     weight = layer.weight.data
-    clipped = torch.count_nonzero(weight.clamp(-kMaxWeight, kMaxWeight) - weight)
+    clipped = int(torch.count_nonzero(weight.clamp(-kMaxWeight, kMaxWeight) - weight).item())
     total_elements = torch.numel(weight)
-    clipped_max = torch.max(torch.abs(weight.clamp(-kMaxWeight, kMaxWeight) - weight))
+    clipped_max = float(torch.max(torch.abs(weight.clamp(-kMaxWeight, kMaxWeight) - weight)).item())
     print("layer has {}/{} clipped weights. Exceeding by {} the maximum {}.".format(clipped, total_elements, clipped_max, kMaxWeight))
     weight = weight.clamp(-kMaxWeight, kMaxWeight).mul(kWeightScale).round().to(torch.int8)
-    ascii_hist('fc weight:', weight.numpy())
+    ascii_hist('fc weight:', weight.cpu().numpy())
     # FC inputs are padded to 32 elements for simd.
     num_input = weight.shape[1]
     if num_input % 32 != 0:
       num_input += 32 - (num_input % 32)
-      new_w = torch.zeros(weight.shape[0], num_input, dtype=torch.int8)
+      new_w = weight.new_zeros((weight.shape[0], num_input))
       new_w[:, :weight.shape[1]] = weight
       weight = new_w
     # Stored as [outputs][inputs], so we can flatten
-    self.buf.extend(weight.flatten().numpy().tobytes())
+    self.buf.extend(weight.flatten().cpu().numpy().tobytes())
 
   def int32(self, v):
     self.buf.extend(struct.pack("<I", v))
 
 class NNUEReader():
-  def __init__(self, f, feature_set):
+  def __init__(self, f, feature_set=None):
     self.f = f
+    if feature_set is None:
+      feature_set = self.detect_feature_set()
+    else:
+      feature_set = get_unfactorized_feature_set(feature_set)
+
     self.feature_set = feature_set
     self.model = M.NNUE(feature_set)
     fc_hash = NNUEWriter.fc_hash(self.model)
 
-    self.read_header(feature_set, fc_hash)
+    self.description = self.read_header(feature_set, fc_hash)
+    self.model.nnue_description = self.description
     self.read_int32(feature_set.hash ^ (M.L1*2)) # Feature transformer hash
     self.read_feature_transformer(self.model.input, self.model.num_psqt_buckets)
     for i in range(self.model.num_ls_buckets):
@@ -154,14 +187,63 @@ class NNUEReader():
       self.model.layer_stacks.output.weight.data[i:(i+1), :] = output.weight
       self.model.layer_stacks.output.bias.data[i:(i+1)] = output.bias
 
+    if self.f.read(1):
+      raise NNUEFormatError('Unexpected trailing bytes after the NNUE payload')
+
+  def detect_feature_set(self):
+    try:
+      position = self.f.tell()
+    except (AttributeError, OSError) as error:
+      raise NNUEFormatError('NNUE input must be a seekable binary file') from error
+
+    header = self.f.read(8)
+    self.f.seek(position)
+    if len(header) != 8:
+      raise NNUEFormatError('Truncated NNUE header')
+
+    version, network_hash = struct.unpack('<II', header)
+    if version != VERSION:
+      raise NNUEFormatError('Unsupported NNUE version: expected {:08x}, got {:08x}'.format(VERSION, version))
+
+    matches = []
+    for name in features.get_available_feature_blocks_names():
+      if '^' in name:
+        continue
+      candidate = features.get_feature_set_from_name(name)
+      fc_hash = NNUEWriter.fc_hash_for_num_ls_buckets(candidate.num_ls_buckets)
+      expected = fc_hash ^ candidate.hash ^ (M.L1 * 2)
+      if network_hash == expected:
+        matches.append(candidate)
+
+    if len(matches) != 1:
+      raise NNUEFormatError(
+        'Could not uniquely identify the NNUE feature set from network hash {:08x}'.format(network_hash)
+      )
+    return matches[0]
+
   def read_header(self, feature_set, fc_hash):
     self.read_int32(VERSION) # version
     self.read_int32(fc_hash ^ feature_set.hash ^ (M.L1*2)) # halfkp network hash
     desc_len = self.read_int32() # Network definition
-    description = self.f.read(desc_len)
+    if desc_len > MAX_DESCRIPTION_LENGTH:
+      raise NNUEFormatError('NNUE description is unreasonably large: {} bytes'.format(desc_len))
+    description = self.read_exact(desc_len, 'network description')
+    try:
+      return description.decode('utf-8')
+    except UnicodeDecodeError as error:
+      raise NNUEFormatError('NNUE description is not valid UTF-8') from error
+
+  def read_exact(self, size, label):
+    data = self.f.read(size)
+    if len(data) != size:
+      raise NNUEFormatError('Truncated NNUE {}: expected {} bytes, got {}'.format(label, size, len(data)))
+    return data
 
   def tensor(self, dtype, shape):
-    d = numpy.fromfile(self.f, dtype, reduce(operator.mul, shape, 1))
+    count = reduce(operator.mul, shape, 1)
+    item_size = numpy.dtype(dtype).itemsize
+    raw = self.read_exact(count * item_size, 'tensor')
+    d = numpy.frombuffer(raw, dtype, count)
     d = torch.from_numpy(d.astype(numpy.float32))
     d = d.reshape(shape)
     return d
@@ -198,42 +280,54 @@ class NNUEReader():
     layer.weight.data = layer.weight.data[:non_padded_shape[0], :non_padded_shape[1]]
 
   def read_int32(self, expected=None):
-    v = struct.unpack("<I", self.f.read(4))[0]
+    v = struct.unpack("<I", self.read_exact(4, 'integer'))[0]
     if expected is not None and v != expected:
-      raise Exception("Expected: %x, got %x" % (expected, v))
+      raise NNUEFormatError("Expected: %x, got %x" % (expected, v))
     return v
+
+
+def load_nnue_for_training(f, target_feature_set):
+  """Load the serialized real features, then add zeroed training factors."""
+  reader = NNUEReader(f)
+  model = reader.model
+  model.set_feature_set(target_feature_set)
+  return model
 
 def main():
   parser = argparse.ArgumentParser(description="Converts files between ckpt and nnue format.")
-  parser.add_argument("source", help="Source file (can be .ckpt, .pt or .nnue)")
-  parser.add_argument("target", help="Target file (can be .pt or .nnue)")
+  parser.add_argument("source", help="Source file (can be .ckpt, .pt, .pth or .nnue)")
+  parser.add_argument("target", help="Target file (can be .pt, .pth or .nnue)")
   parser.add_argument("--description", default=None, type=str, dest='description', help="The description string to include in the network. Only works when serializing into a .nnue file.")
-  features.add_argparse_args(parser)
+  features.add_argparse_args(parser, default=None)
   args = parser.parse_args()
 
-  feature_set = features.get_feature_set_from_name(args.features)
+  feature_set = features.get_feature_set_from_name(args.features) if args.features else None
+  source_suffix = os.path.splitext(args.source)[1].lower()
+  target_suffix = os.path.splitext(args.target)[1].lower()
 
   print('Converting %s to %s' % (args.source, args.target))
 
-  if args.source.endswith('.ckpt'):
+  if source_suffix == '.ckpt':
+    if feature_set is None:
+      feature_set = features.get_feature_set_from_name('HalfKAv2^')
     nnue = M.NNUE.load_from_checkpoint(args.source, feature_set=feature_set)
     nnue.eval()
-  elif args.source.endswith('.pt'):
+  elif source_suffix in ('.pt', '.pth'):
     # Load with weights_only=False to avoid safe_globals complexity
     # This is safe since we trust the checkpoint source
-    nnue = torch.load(args.source, weights_only=False)
-  elif args.source.endswith('.nnue'):
+    nnue = torch.load(args.source, map_location='cpu', weights_only=False)
+  elif source_suffix == '.nnue':
     with open(args.source, 'rb') as f:
       reader = NNUEReader(f, feature_set)
       nnue = reader.model
   else:
     raise Exception('Invalid network input format.')
 
-  if args.target.endswith('.ckpt'):
+  if target_suffix == '.ckpt':
     raise Exception('Cannot convert into .ckpt')
-  elif args.target.endswith('.pt'):
+  elif target_suffix in ('.pt', '.pth'):
     torch.save(nnue, args.target)
-  elif args.target.endswith('.nnue'):
+  elif target_suffix == '.nnue':
     writer = NNUEWriter(nnue, args.description)
     with open(args.target, 'wb') as f:
       f.write(writer.buf)

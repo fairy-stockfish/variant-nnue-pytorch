@@ -1,29 +1,35 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <algorithm>
+#include <array>
+#include <atomic>
+#include <condition_variable>
+#include <cstdio>
+#include <cstdint>
+#include <functional>
+#include <exception>
 #include <iterator>
 #include <future>
+#include <fstream>
+#include <limits>
+#include <map>
 #include <mutex>
 #include <thread>
-#include <deque>
 #include <random>
+#include <stdexcept>
+#include <vector>
 
 #include "lib/nnue_training_data_formats.h"
 #include "lib/nnue_training_data_stream.h"
-#include "lib/rng.h"
 
-#if defined (__x86_64__)
-#define EXPORT
-#define CDECL
-#else
-#if defined (_MSC_VER)
+#if defined(_WIN32)
 #define EXPORT __declspec(dllexport)
 #define CDECL __cdecl
 #else
 #define EXPORT
-#define CDECL __attribute__ ((__cdecl__))
-#endif
+#define CDECL
 #endif
 
 using namespace bin;
@@ -328,7 +334,7 @@ struct SparseBatch
     SparseBatch(FeatureSet<Ts...>, const std::vector<TrainingDataEntry>& entries)
     {
         num_inputs = FeatureSet<Ts...>::INPUTS;
-        size = entries.size();
+        size = static_cast<int>(entries.size());
         is_white = new float[size];
         outcome = new float[size];
         score = new float[size];
@@ -426,12 +432,42 @@ struct Stream : AnyStream
     Stream(int concurrency, const char* filename, bool cyclic, std::function<bool(const TrainingDataEntry&)> skipPredicate) :
         m_stream(training_data::open_sfen_input_file_parallel(concurrency, filename, cyclic, skipPredicate))
     {
+        if (!m_stream)
+            throw std::invalid_argument("Unsupported training-data file (expected a .bin file)");
+
+        std::ifstream input(filename, std::ios::binary | std::ios::ate);
+        if (!input)
+            throw std::invalid_argument("Could not open the training-data file");
+        const auto size = static_cast<std::streamoff>(input.tellg());
+        if (size <= 0 || size % static_cast<std::streamoff>(sizeof(bin::nodchip::PackedSfenValue)) != 0)
+            throw std::invalid_argument("Legacy training-data size must be a positive multiple of 72 bytes");
     }
 
     virtual StorageT* next() = 0;
 
+    void clear_last_error() noexcept
+    {
+        m_last_error[0] = '\0';
+    }
+
+    void set_last_error(const char* error) noexcept
+    {
+        std::snprintf(
+            m_last_error.data(),
+            m_last_error.size(),
+            "%s",
+            error == nullptr ? "unknown native loader error" : error
+        );
+    }
+
+    [[nodiscard]] const char* last_error() const noexcept
+    {
+        return m_last_error.data();
+    }
+
 protected:
     std::unique_ptr<training_data::BasicSfenInputStream> m_stream;
+    std::array<char, 1024> m_last_error{};
 };
 
 template <typename StorageT>
@@ -483,37 +519,69 @@ struct FeaturedBatchStream : Stream<StorageT>
 
         auto worker = [this]()
         {
-            std::vector<TrainingDataEntry> entries;
-            entries.reserve(m_batch_size);
-
-            while(!m_stop_flag.load())
+            try
             {
-                entries.clear();
+                std::vector<TrainingDataEntry> entries;
+                entries.reserve(m_batch_size);
 
+                while(!m_stop_flag.load())
                 {
-                    std::unique_lock lock(m_stream_mutex);
-                    BaseType::m_stream->fill(entries, m_batch_size);
-                    if (entries.empty())
+                    entries.clear();
+                    std::uint64_t sequence = 0;
+
                     {
-                        break;
+                        std::unique_lock lock(m_stream_mutex);
+                        BaseType::m_stream->fill(entries, m_batch_size);
+                        if (entries.empty())
+                        {
+                            break;
+                        }
+                        sequence = m_next_input_sequence++;
+                    }
+
+                    auto batch = std::make_unique<StorageT>(FeatureSet{}, entries);
+
+                    {
+                        std::unique_lock lock(m_batch_mutex);
+                        m_batches_not_full.wait(lock, [this, sequence]() {
+                            // Always allow the next batch the consumer needs. Without
+                            // this exception, later batches can fill the bounded map
+                            // while the slowest worker is still constructing the
+                            // earliest one, deadlocking the whole stream.
+                            return m_batches.size() < static_cast<std::size_t>(m_concurrency + 1)
+                                || sequence == m_next_output_sequence
+                                || m_stop_flag.load();
+                        });
+
+                        if (m_stop_flag.load())
+                        {
+                            break;
+                        }
+
+                        const auto [unused, inserted] = m_batches.emplace(sequence, batch.get());
+                        if (!inserted)
+                            throw std::logic_error("duplicate native-loader batch sequence");
+                        batch.release();
+
+                        lock.unlock();
+                        m_batches_any.notify_all();
                     }
                 }
-
-                auto batch = new StorageT(FeatureSet{}, entries);
-
+            }
+            catch (...)
+            {
                 {
                     std::unique_lock lock(m_batch_mutex);
-                    m_batches_not_full.wait(lock, [this]() { return m_batches.size() < m_concurrency + 1 || m_stop_flag.load(); });
-
-                    m_batches.emplace_back(batch);
-
-                    lock.unlock();
-                    m_batches_any.notify_one();
+                    if (!m_worker_exception)
+                        m_worker_exception = std::current_exception();
+                    m_stop_flag.store(true);
                 }
-
+                m_batches_not_full.notify_all();
+                m_batches_any.notify_all();
             }
+
             m_num_workers.fetch_sub(1);
-            m_batches_any.notify_one();
+            m_batches_any.notify_all();
         };
 
         const int num_feature_threads = std::max(
@@ -536,15 +604,24 @@ struct FeaturedBatchStream : Stream<StorageT>
     StorageT* next() override
     {
         std::unique_lock lock(m_batch_mutex);
-        m_batches_any.wait(lock, [this]() { return !m_batches.empty() || m_num_workers.load() == 0; });
+        m_batches_any.wait(lock, [this]() {
+            return m_batches.find(m_next_output_sequence) != m_batches.end()
+                || m_num_workers.load() == 0
+                || m_worker_exception;
+        });
 
-        if (!m_batches.empty())
+        if (m_worker_exception)
+            std::rethrow_exception(m_worker_exception);
+
+        const auto it = m_batches.find(m_next_output_sequence);
+        if (it != m_batches.end())
         {
-            auto batch = m_batches.front();
-            m_batches.pop_front();
+            auto batch = it->second;
+            m_batches.erase(it);
+            ++m_next_output_sequence;
 
             lock.unlock();
-            m_batches_not_full.notify_one();
+            m_batches_not_full.notify_all();
 
             return batch;
         }
@@ -555,6 +632,7 @@ struct FeaturedBatchStream : Stream<StorageT>
     {
         m_stop_flag.store(true);
         m_batches_not_full.notify_all();
+        m_batches_any.notify_all();
 
         for (auto& worker : m_workers)
         {
@@ -564,7 +642,7 @@ struct FeaturedBatchStream : Stream<StorageT>
             }
         }
 
-        for (auto& batch : m_batches)
+        for (auto& [sequence, batch] : m_batches)
         {
             delete batch;
         }
@@ -573,39 +651,160 @@ struct FeaturedBatchStream : Stream<StorageT>
 private:
     int m_batch_size;
     int m_concurrency;
-    std::deque<StorageT*> m_batches;
+    std::map<std::uint64_t, StorageT*> m_batches;
+    std::uint64_t m_next_input_sequence{0};
+    std::uint64_t m_next_output_sequence{0};
     std::mutex m_batch_mutex;
     std::mutex m_stream_mutex;
     std::condition_variable m_batches_not_full;
     std::condition_variable m_batches_any;
+    std::exception_ptr m_worker_exception;
     std::atomic_bool m_stop_flag;
-    std::atomic_int m_num_workers;
+    std::atomic_int m_num_workers{0};
 
     std::vector<std::thread> m_workers;
 };
 
 
-std::function<bool(const TrainingDataEntry&)> make_skip_predicate(bool filtered, int random_fen_skipping)
+static bool is_capture(const TrainingDataEntry& e)
+{
+    if (e.move.type == MoveType::EnPassant)
+        return true;
+    if (e.move.type == MoveType::Castle)
+        return false;
+
+    const auto from = static_cast<unsigned int>(e.move.from);
+    const auto to = static_cast<unsigned int>(e.move.to);
+    if (from >= static_cast<unsigned int>(Square::NB)
+        || to >= static_cast<unsigned int>(Square::NB))
+        return false;
+
+    const auto mover = e.pos.pieceAt(e.move.from);
+    const auto target = e.pos.pieceAt(e.move.to);
+    return mover != Piece::None
+        && target != Piece::None
+        && color_of(mover) != color_of(target);
+}
+
+static bool square_has_attacker(const Position& pos, Square target, Color attacker)
+{
+    const int target_square = static_cast<int>(target);
+    if (target_square < 0 || target_square >= static_cast<int>(Square::NB))
+        return false;
+
+    const int target_file = target_square % static_cast<int>(File::FILE_NB);
+    const int target_rank = target_square / static_cast<int>(File::FILE_NB);
+
+    const auto piece_at = [&pos](int file, int rank) {
+        if (file < 0 || file >= static_cast<int>(File::FILE_NB)
+            || rank < 0 || rank >= static_cast<int>(Rank::RANK_NB))
+            return Piece::None;
+        return pos.pieceAt(static_cast<Square>(rank * static_cast<int>(File::FILE_NB) + file));
+    };
+
+    const auto is_attacker = [attacker](Piece piece, PieceType type) {
+        return piece != Piece::None
+            && color_of(piece) == attacker
+            && type_of(piece) == type;
+    };
+
+    // A white pawn attacks one rank upwards; viewed from the target,
+    // its source is one rank below (and vice versa for black).
+    const int pawn_source_rank = target_rank + (attacker == Color::White ? -1 : 1);
+    for (const int df : {-1, 1})
+        if (is_attacker(piece_at(target_file + df, pawn_source_rank), PieceType::Pawn))
+            return true;
+
+    static constexpr int knight_offsets[][2] = {
+        {-2, -1}, {-2, 1}, {-1, -2}, {-1, 2},
+        {1, -2}, {1, 2}, {2, -1}, {2, 1}
+    };
+    for (const auto& offset : knight_offsets)
+        if (is_attacker(piece_at(target_file + offset[0], target_rank + offset[1]), PieceType::Knight))
+            return true;
+
+    for (int df = -1; df <= 1; ++df)
+        for (int dr = -1; dr <= 1; ++dr)
+            if ((df != 0 || dr != 0)
+                && is_attacker(piece_at(target_file + df, target_rank + dr), PieceType::King))
+                return true;
+
+    const auto attacked_on_ray = [&](int df, int dr, PieceType slider) {
+        int file = target_file + df;
+        int rank = target_rank + dr;
+        while (file >= 0 && file < static_cast<int>(File::FILE_NB)
+            && rank >= 0 && rank < static_cast<int>(Rank::RANK_NB))
+        {
+            const auto piece = piece_at(file, rank);
+            if (piece != Piece::None)
+                return color_of(piece) == attacker
+                    && (type_of(piece) == slider || type_of(piece) == PieceType::Queen);
+            file += df;
+            rank += dr;
+        }
+        return false;
+    };
+
+    static constexpr int bishop_directions[][2] = {
+        {-1, -1}, {-1, 1}, {1, -1}, {1, 1}
+    };
+    for (const auto& direction : bishop_directions)
+        if (attacked_on_ray(direction[0], direction[1], PieceType::Bishop))
+            return true;
+
+    static constexpr int rook_directions[][2] = {
+        {-1, 0}, {1, 0}, {0, -1}, {0, 1}
+    };
+    for (const auto& direction : rook_directions)
+        if (attacked_on_ray(direction[0], direction[1], PieceType::Rook))
+            return true;
+
+    return false;
+}
+
+bool is_smart_filtered(const TrainingDataEntry& e)
+{
+    const auto side_to_move = e.pos.sideToMove();
+    const auto king_square = e.pos.kingSquare(side_to_move);
+    const auto king_index = static_cast<unsigned int>(king_square);
+    const bool valid_king = king_index < static_cast<unsigned int>(Square::NB)
+        && e.pos.pieceAt(king_square) != Piece::None
+        && type_of(e.pos.pieceAt(king_square)) == PieceType::King
+        && color_of(e.pos.pieceAt(king_square)) == side_to_move;
+
+    const auto opponent = side_to_move == Color::White ? Color::Black : Color::White;
+    return is_capture(e)
+        || (valid_king && square_has_attacker(e.pos, king_square, opponent));
+}
+
+
+std::function<bool(const TrainingDataEntry&)> make_skip_predicate(bool filtered, int random_fen_skipping, std::uint64_t seed)
 {
     if (filtered || random_fen_skipping)
     {
         return [
             random_fen_skipping,
-            prob = double(random_fen_skipping) / (random_fen_skipping + 1),
-            filtered
-            ](const TrainingDataEntry& e){
+            filtered,
+            generator = std::mt19937_64(seed)
+            ](const TrainingDataEntry& e) mutable {
 
             auto do_skip = [&]() {
-                std::bernoulli_distribution distrib(prob);
-                auto& prng = rng::get_thread_local_rng();
-                return distrib(prng);
+                const std::uint64_t bound = static_cast<std::uint64_t>(random_fen_skipping) + 1;
+                // Rejection sampling avoids modulo bias and is reproducible
+                // across standard-library implementations.
+                const std::uint64_t threshold = (0 - bound) % bound;
+                std::uint64_t value;
+                do
+                {
+                    value = generator();
+                } while (value < threshold);
+                return value % bound != 0;
             };
 
             auto do_filter = [&]() {
-                return false;
+                return is_smart_filtered(e);
             };
 
-            static thread_local std::mt19937 gen(std::random_device{}());
             return (random_fen_skipping && do_skip()) || (filtered && do_filter());
         };
     }
@@ -615,37 +814,56 @@ std::function<bool(const TrainingDataEntry&)> make_skip_predicate(bool filtered,
 
 extern "C" {
 
+    EXPORT Stream<SparseBatch>* CDECL create_sparse_batch_stream_with_seed(const char* feature_set_c, int concurrency, const char* filename, int batch_size, bool cyclic, bool filtered, int random_fen_skipping, std::uint64_t seed)
+    {
+        if (feature_set_c == nullptr || filename == nullptr)
+        {
+            fprintf(stderr, "feature_set and filename must not be null\n");
+            return nullptr;
+        }
+        if (concurrency < 1 || batch_size < 1 || random_fen_skipping < 0)
+        {
+            fprintf(stderr, "Invalid loader configuration: concurrency and batch_size must be positive, random_fen_skipping must be non-negative\n");
+            return nullptr;
+        }
+
+        try
+        {
+            auto skipPredicate = make_skip_predicate(filtered, random_fen_skipping, seed);
+            std::string_view feature_set(feature_set_c);
+            if (feature_set == "HalfKP")
+                return new FeaturedBatchStream<FeatureSet<HalfKP>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+            if (feature_set == "HalfKP^")
+                return new FeaturedBatchStream<FeatureSet<HalfKPFactorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+            if (feature_set == "HalfKA")
+                return new FeaturedBatchStream<FeatureSet<HalfKA>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+            if (feature_set == "HalfKA^")
+                return new FeaturedBatchStream<FeatureSet<HalfKAFactorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+            if (feature_set == "HalfKAv2")
+                return new FeaturedBatchStream<FeatureSet<HalfKAv2>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+            if (feature_set == "HalfKAv2^")
+                return new FeaturedBatchStream<FeatureSet<HalfKAv2Factorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+
+            fprintf(stderr, "Unknown feature_set %s\n", feature_set_c);
+            return nullptr;
+        }
+        catch (const std::exception& error)
+        {
+            fprintf(stderr, "Failed to create sparse batch stream: %s\n", error.what());
+            return nullptr;
+        }
+        catch (...)
+        {
+            fprintf(stderr, "Failed to create sparse batch stream: unknown error\n");
+            return nullptr;
+        }
+    }
+
+    // Preserve the original ABI for external callers. The Python loader uses
+    // the seeded entry point above; legacy callers retain their old behavior.
     EXPORT Stream<SparseBatch>* CDECL create_sparse_batch_stream(const char* feature_set_c, int concurrency, const char* filename, int batch_size, bool cyclic, bool filtered, int random_fen_skipping)
     {
-        auto skipPredicate = make_skip_predicate(filtered, random_fen_skipping);
-
-        std::string_view feature_set(feature_set_c);
-        if (feature_set == "HalfKP")
-        {
-            return new FeaturedBatchStream<FeatureSet<HalfKP>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
-        }
-        else if (feature_set == "HalfKP^")
-        {
-            return new FeaturedBatchStream<FeatureSet<HalfKPFactorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
-        }
-        else if (feature_set == "HalfKA")
-        {
-            return new FeaturedBatchStream<FeatureSet<HalfKA>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
-        }
-        else if (feature_set == "HalfKA^")
-        {
-            return new FeaturedBatchStream<FeatureSet<HalfKAFactorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
-        }
-        else if (feature_set == "HalfKAv2")
-        {
-            return new FeaturedBatchStream<FeatureSet<HalfKAv2>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
-        }
-        else if (feature_set == "HalfKAv2^")
-        {
-            return new FeaturedBatchStream<FeatureSet<HalfKAv2Factorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
-        }
-        fprintf(stderr, "Unknown feature_set %s\n", feature_set_c);
-        return nullptr;
+        return create_sparse_batch_stream_with_seed(feature_set_c, concurrency, filename, batch_size, cyclic, filtered, random_fen_skipping, std::random_device{}());
     }
 
     EXPORT void CDECL destroy_sparse_batch_stream(Stream<SparseBatch>* stream)
@@ -655,7 +873,31 @@ extern "C" {
 
     EXPORT SparseBatch* CDECL fetch_next_sparse_batch(Stream<SparseBatch>* stream)
     {
-        return stream->next();
+        if (stream == nullptr)
+            return nullptr;
+
+        stream->clear_last_error();
+        try
+        {
+            return stream->next();
+        }
+        catch (const std::exception& error)
+        {
+            stream->set_last_error(error.what());
+            fprintf(stderr, "Failed to fetch sparse batch: %s\n", error.what());
+            return nullptr;
+        }
+        catch (...)
+        {
+            stream->set_last_error("unknown native loader error");
+            fprintf(stderr, "Failed to fetch sparse batch: unknown error\n");
+            return nullptr;
+        }
+    }
+
+    EXPORT const char* CDECL get_sparse_batch_stream_error(Stream<SparseBatch>* stream)
+    {
+        return stream == nullptr ? "null native loader stream" : stream->last_error();
     }
 
     EXPORT void CDECL destroy_sparse_batch(SparseBatch* e)
@@ -665,12 +907,12 @@ extern "C" {
 
 }
 
-/* benches */ //*
+#ifdef TRAINING_DATA_LOADER_BENCH
 #include <chrono>
 
 int main()
 {
-    auto stream = create_sparse_batch_stream("HalfKP", 4, "10m_d3_q_2.bin", 8192, true, false, 0);
+    auto stream = create_sparse_batch_stream_with_seed("HalfKP", 4, "10m_d3_q_2.bin", 8192, true, false, 0, 0);
     auto t0 = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 1000; ++i)
     {
@@ -680,4 +922,4 @@ int main()
     auto t1 = std::chrono::high_resolution_clock::now();
     std::cout << (t1 - t0).count() / 1e9 << "s\n";
 }
-//*/
+#endif

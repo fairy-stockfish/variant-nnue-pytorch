@@ -434,7 +434,7 @@ def load_model(filename, feature_set):
         if filename.endswith(".pt"):
             # Load with weights_only=False to avoid safe_globals complexity
             # This is safe since we trust the checkpoint source
-            model = torch.load(filename, weights_only=False)
+            model = torch.load(filename, map_location='cpu', weights_only=False)
         else:
             model = M.NNUE.load_from_checkpoint(
                 filename, feature_set=feature_set)

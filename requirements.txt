@@ -1,7 +1,15 @@
 chess
 matplotlib
+numpy<2
 --extra-index-url https://download.pytorch.org/whl/cu118
-torch
+torch==2.7.1+cu118; platform_system == "Windows"
+torchvision==0.22.1+cu118; platform_system == "Windows"
+torchaudio==2.7.1+cu118; platform_system == "Windows"
+torch>=2.1,<2.8; platform_system != "Windows"
+torchvision>=0.16,<0.23; platform_system != "Windows"
+torchaudio>=2.1,<2.8; platform_system != "Windows"
 pytorch-lightning==1.9.5
+torchmetrics==0.11.4
 tensorboard
 cupy-cuda11x
+pytest
