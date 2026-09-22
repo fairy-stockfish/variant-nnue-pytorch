@@ -10,8 +10,8 @@ class FeatureBlock:
     It abstracts a named set of features in a way that
     allows seamless introduction of factorizers.
 
-    For example a set of HalfKP features is a subclass of this class, and
-    so is the HalfKP^ feature set (where "^" denotes that it's factorized).
+    For example a set of HalfKAv2 features is a subclass of this class, and
+    so is the HalfKAv2^ feature set (where "^" denotes that it's factorized).
 
     There are 3 fundamental things about a feature block which it needs for construction:
         - name - whatever, just please use ascii. Also we'd like "^" to be reserved to
@@ -21,12 +21,12 @@ class FeatureBlock:
                     it's assumed that it's a factorized feature block.
 
     More about factors, because it's the fundamental building block.
-    A block can have just one factor, like HalfKP, but sometimes it's possible to
+    A block can have just one factor, like HalfKAv2, but sometimes it's possible to
     factorize some features further. Ideally we don't want to have multiple
     features talking about the same thing when the net is actually used for play,
     because it's wasteful, but it's helpful during training because it makes it
-    easier to generalize over similar positions. This is for example utilized by HalfKP^,
-    which defines 3 factors: HalfKP, HalfK, and P.
+    easier to generalize over similar positions. This is utilized by HalfKAv2^,
+    which defines the HalfKAv2 and A factors.
     Factors are passed to the constructor as an OrderedDict from string to the number of dimensions.
     The first factor is the "real" factor (or "main" factor), one that is supposed to be used for play.
     The following factors (if any) are the "virtual" factors, and are only used for training.
