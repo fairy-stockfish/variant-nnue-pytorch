@@ -50,8 +50,9 @@ python train.py --resume_from_checkpoint <path> ...
 python train.py --gpus 1 ...
 ```
 ## Feature set selection
-By default the trainer uses a factorized HalfKAv2 feature set (named "HalfKAv2^")
-If you wish to change the feature set used then you can use the `--features=NAME` option. For the list of available features see `--help`
+The trainer supports the HalfKAv2 feature set, either factorized (`HalfKAv2^`) or
+non-factorized (`HalfKAv2`). The factorized form is used by default. Use the
+`--features=NAME` option to select between them.
 The default is:
 ```
 python train.py ... --features="HalfKAv2^"
@@ -64,4 +65,3 @@ pip install tensorboard
 tensorboard --logdir=logs
 ```
 Then, go to http://localhost:6006/
-

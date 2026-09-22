@@ -225,8 +225,8 @@ class NNUE(pl.LightningModule):
     # first item in an OrderedDict. (the ordered dict being str : int
     # mapping of the factor name to its size).
     # It is our new_feature_factor_name.
-    # For example old_feature_block.name == "HalfKP"
-    # and new_feature_factor_name == "HalfKP^"
+    # For example old_feature_block.name == "HalfKAv2"
+    # and new_feature_factor_name == "HalfKAv2^"
     # We assume here that the "^" denotes factorized feature block
     # and we would like feature block implementers to follow this convention.
     # So if our current feature_set matches the first factor in the new_feature_set
