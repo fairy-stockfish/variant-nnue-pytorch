@@ -1,8 +1,33 @@
 import torch
 from torch import nn
 from torch import autograd
-import cupy as cp
+import torch.nn.functional as F
 import math
+
+try:
+    import cupy as cp
+except ImportError:
+    # CuPy is only needed for the CUDA kernels. Without it, training falls back
+    # to a pure PyTorch implementation (see _feature_transformer_slice_generic).
+    cp = None
+
+def _feature_transformer_slice_generic(feature_indices, feature_values, weight, bias):
+    '''
+        Device-agnostic (e.g. CPU) implementation of the sparse feature transformer
+        using torch's embedding_bag. Semantically equivalent to the CUDA kernel:
+        output[b] = bias + sum_i feature_values[b, i] * weight[feature_indices[b, i]],
+        where the first index of -1 marks the end of the active features (like the
+        CUDA kernel, everything from there on is ignored, as it may be uninitialized).
+        Gradients are handled by autograd.
+    '''
+    indices = feature_indices.long()
+    valid = (indices < 0).cumsum(dim=1) == 0
+    indices = torch.where(valid, indices, torch.zeros_like(indices))
+    values = torch.where(valid, feature_values, torch.zeros_like(feature_values))
+    return F.embedding_bag(indices, weight, per_sample_weights=values, mode='sum') + bias
+
+def _use_cuda_kernels(weight):
+    return weight.is_cuda and cp is not None
 
 def _find_nearest_divisor(value, target):
     divisors = []
@@ -500,6 +525,8 @@ class FeatureTransformerSlice(nn.Module):
         self.bias = nn.Parameter(torch.rand(num_outputs, dtype=torch.float32) * (2 * sigma) - sigma)
 
     def forward(self, feature_indices, feature_values):
+        if not _use_cuda_kernels(self.weight):
+            return _feature_transformer_slice_generic(feature_indices, feature_values, self.weight, self.bias)
         return FeatureTransformerSliceFunction.apply(feature_indices, feature_values, self.weight, self.bias)
 
 class DoubleFeatureTransformerSlice(nn.Module):
@@ -513,6 +540,9 @@ class DoubleFeatureTransformerSlice(nn.Module):
         self.bias = nn.Parameter(torch.rand(num_outputs, dtype=torch.float32) * (2 * sigma) - sigma)
 
     def forward(self, feature_indices_0, feature_values_0, feature_indices_1, feature_values_1):
+        if not _use_cuda_kernels(self.weight):
+            return (_feature_transformer_slice_generic(feature_indices_0, feature_values_0, self.weight, self.bias),
+                    _feature_transformer_slice_generic(feature_indices_1, feature_values_1, self.weight, self.bias))
         return DoubleFeatureTransformerSliceFunction.apply(feature_indices_0, feature_values_0, feature_indices_1, feature_values_1, self.weight, self.bias)
 
 if __name__ == '__main__':

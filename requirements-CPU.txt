@@ -1,0 +1,8 @@
+chess
+matplotlib
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+pytorch-lightning==1.9.5
+tensorboard
+# pytorch-lightning 1.9.5 still imports pkg_resources, which was removed in setuptools 81
+setuptools<81

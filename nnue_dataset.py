@@ -32,16 +32,24 @@ class SparseBatch(ctypes.Structure):
     ]
 
     def get_tensors(self, device):
-        white_values = torch.from_numpy(np.ctypeslib.as_array(self.white_values, shape=(self.size, self.max_active_features))).pin_memory().to(device=device, non_blocking=True)
-        black_values = torch.from_numpy(np.ctypeslib.as_array(self.black_values, shape=(self.size, self.max_active_features))).pin_memory().to(device=device, non_blocking=True)
-        white_indices = torch.from_numpy(np.ctypeslib.as_array(self.white, shape=(self.size, self.max_active_features))).pin_memory().to(device=device, non_blocking=True)
-        black_indices = torch.from_numpy(np.ctypeslib.as_array(self.black, shape=(self.size, self.max_active_features))).pin_memory().to(device=device, non_blocking=True)
-        us = torch.from_numpy(np.ctypeslib.as_array(self.is_white, shape=(self.size, 1))).pin_memory().to(device=device, non_blocking=True)
+        # Pinned memory only helps (and is only available) for transfers to a GPU.
+        pin = torch.device(device).type == 'cuda'
+        def to_device(t):
+            # The numpy arrays alias the C++ batch, which is freed right after this call,
+            # so the data must always be copied (pin_memory() copies, .to('cpu') would not).
+            if pin:
+                return t.pin_memory().to(device=device, non_blocking=True)
+            return t.to(device=device, copy=True)
+        white_values = to_device(torch.from_numpy(np.ctypeslib.as_array(self.white_values, shape=(self.size, self.max_active_features))))
+        black_values = to_device(torch.from_numpy(np.ctypeslib.as_array(self.black_values, shape=(self.size, self.max_active_features))))
+        white_indices = to_device(torch.from_numpy(np.ctypeslib.as_array(self.white, shape=(self.size, self.max_active_features))))
+        black_indices = to_device(torch.from_numpy(np.ctypeslib.as_array(self.black, shape=(self.size, self.max_active_features))))
+        us = to_device(torch.from_numpy(np.ctypeslib.as_array(self.is_white, shape=(self.size, 1))))
         them = 1.0 - us
-        outcome = torch.from_numpy(np.ctypeslib.as_array(self.outcome, shape=(self.size, 1))).pin_memory().to(device=device, non_blocking=True)
-        score = torch.from_numpy(np.ctypeslib.as_array(self.score, shape=(self.size, 1))).pin_memory().to(device=device, non_blocking=True)
-        psqt_indices = torch.from_numpy(np.ctypeslib.as_array(self.psqt_indices, shape=(self.size,))).long().pin_memory().to(device=device, non_blocking=True)
-        layer_stack_indices = torch.from_numpy(np.ctypeslib.as_array(self.layer_stack_indices, shape=(self.size,))).long().pin_memory().to(device=device, non_blocking=True)
+        outcome = to_device(torch.from_numpy(np.ctypeslib.as_array(self.outcome, shape=(self.size, 1))))
+        score = to_device(torch.from_numpy(np.ctypeslib.as_array(self.score, shape=(self.size, 1))))
+        psqt_indices = to_device(torch.from_numpy(np.ctypeslib.as_array(self.psqt_indices, shape=(self.size,))).long())
+        layer_stack_indices = to_device(torch.from_numpy(np.ctypeslib.as_array(self.layer_stack_indices, shape=(self.size,))).long())
         return us, them, white_indices, white_values, black_indices, black_values, outcome, score, psqt_indices, layer_stack_indices
 
 SparseBatchPtr = ctypes.POINTER(SparseBatch)
