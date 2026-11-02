@@ -6,6 +6,9 @@ import subprocess
 import re
 import chess
 from model import NNUE
+import torch
+
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def read_model(nnue_path, feature_set):
     with open(nnue_path, 'rb') as f:
@@ -13,7 +16,7 @@ def read_model(nnue_path, feature_set):
         return reader.model
 
 def eval_model_batch(model, batch):
-    us, them, white_indices, white_values, black_indices, black_values, outcome, score, psqt_indices, layer_stack_indices = batch.contents.get_tensors('cuda')
+    us, them, white_indices, white_values, black_indices, black_values, outcome, score, psqt_indices, layer_stack_indices = batch.contents.get_tensors(DEVICE)
 
     evals = [v.item() for v in model.forward(us, them, white_indices, white_values, black_indices, black_values, psqt_indices, layer_stack_indices) * 600.0]
     for i in range(len(evals)):
@@ -88,7 +91,7 @@ def main():
     else:
         model = read_model(args.net, feature_set)
     model.eval()
-    model.cuda()
+    model.to(DEVICE)
     fen_batch_provider = make_fen_batch_provider(args.data, batch_size)
 
     model_evals = []

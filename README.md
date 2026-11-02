@@ -4,8 +4,11 @@ This is the chess variant NNUE training code for [Fairy-Stockfish](https://githu
 
 # Setup
 
-Requires a [CUDA capable GPU](https://developer.nvidia.com/cuda-gpus).
+A [CUDA capable GPU](https://developer.nvidia.com/cuda-gpus) is strongly recommended.
 Note: you don't need to download the CUDA Toolkit
+
+Training on CPU only is also possible (see below), but much slower. In that case CuPy is not required,
+and a CPU build of PyTorch is sufficient (`pip install torch --index-url https://download.pytorch.org/whl/cpu`).
 
 #### Package dependencies
 
@@ -49,6 +52,12 @@ python train.py --resume_from_checkpoint <path> ...
 ```
 python train.py --gpus 1 ...
 ```
+
+## Training on CPU
+```
+python train.py --accelerator cpu --batch-size 1024 --threads 8 ...
+```
+Without a GPU (or without CuPy) the feature transformer falls back to a pure PyTorch implementation.
 ## Feature set selection
 By default the trainer uses a factorized HalfKAv2 feature set (named "HalfKAv2^")
 If you wish to change the feature set used then you can use the `--features=NAME` option. For the list of available features see `--help`
