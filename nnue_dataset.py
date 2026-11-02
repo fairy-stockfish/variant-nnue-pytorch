@@ -35,9 +35,11 @@ class SparseBatch(ctypes.Structure):
         # Pinned memory only helps (and is only available) for transfers to a GPU.
         pin = torch.device(device).type == 'cuda'
         def to_device(t):
+            # The numpy arrays alias the C++ batch, which is freed right after this call,
+            # so the data must always be copied (pin_memory() copies, .to('cpu') would not).
             if pin:
-                t = t.pin_memory()
-            return t.to(device=device, non_blocking=True)
+                return t.pin_memory().to(device=device, non_blocking=True)
+            return t.to(device=device, copy=True)
         white_values = to_device(torch.from_numpy(np.ctypeslib.as_array(self.white_values, shape=(self.size, self.max_active_features))))
         black_values = to_device(torch.from_numpy(np.ctypeslib.as_array(self.black_values, shape=(self.size, self.max_active_features))))
         white_indices = to_device(torch.from_numpy(np.ctypeslib.as_array(self.white, shape=(self.size, self.max_active_features))))

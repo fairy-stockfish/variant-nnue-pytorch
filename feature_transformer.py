@@ -16,11 +16,13 @@ def _feature_transformer_slice_generic(feature_indices, feature_values, weight, 
         Device-agnostic (e.g. CPU) implementation of the sparse feature transformer
         using torch's embedding_bag. Semantically equivalent to the CUDA kernel:
         output[b] = bias + sum_i feature_values[b, i] * weight[feature_indices[b, i]],
-        where indices of -1 mark unused slots. Gradients are handled by autograd.
+        where the first index of -1 marks the end of the active features (like the
+        CUDA kernel, everything from there on is ignored, as it may be uninitialized).
+        Gradients are handled by autograd.
     '''
     indices = feature_indices.long()
-    valid = indices >= 0
-    indices = indices.clamp(min=0)
+    valid = (indices < 0).cumsum(dim=1) == 0
+    indices = torch.where(valid, indices, torch.zeros_like(indices))
     values = torch.where(valid, feature_values, torch.zeros_like(feature_values))
     return F.embedding_bag(indices, weight, per_sample_weights=values, mode='sum') + bias
 
