@@ -9,3 +9,4 @@ venv*
 *.dll
 *.lib
 *.pdb
+smoke_test/

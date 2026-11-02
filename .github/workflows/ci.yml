@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cpu-training:
+    name: CPU training smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout trainer
+        uses: actions/checkout@v4
+
+      - name: Checkout variant-nnue-tools
+        id: tools
+        uses: actions/checkout@v4
+        with:
+          repository: fairy-stockfish/variant-nnue-tools
+          path: variant-nnue-tools
+
+      - name: Cache engine binary
+        id: engine-cache
+        uses: actions/cache@v4
+        with:
+          path: variant-nnue-tools/src/stockfish
+          key: engine-${{ runner.os }}-${{ steps.tools.outputs.commit }}
+
+      - name: Build engine
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        working-directory: variant-nnue-tools/src
+        run: make -j$(nproc) ARCH=x86-64-modern build
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-CPU.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements-CPU.txt
+
+      - name: Build data loader
+        run: sh compile_data_loader.bat
+
+      - name: Feature transformer tests
+        run: python tests/test_feature_transformer.py
+
+      - name: End-to-end training smoke test
+        run: scripts/cpu_smoke_test.sh variant-nnue-tools/src/stockfish smoke_test

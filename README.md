@@ -8,7 +8,7 @@ A [CUDA capable GPU](https://developer.nvidia.com/cuda-gpus) is strongly recomme
 Note: you don't need to download the CUDA Toolkit
 
 Training on CPU only is also possible (see below), but much slower. In that case CuPy is not required,
-and a CPU build of PyTorch is sufficient (`pip install torch --index-url https://download.pytorch.org/whl/cpu`).
+and you can use requirements-CPU.txt instead of requirements.txt.
 
 #### Package dependencies
 
@@ -58,6 +58,9 @@ python train.py --gpus 1 ...
 python train.py --accelerator cpu --batch-size 1024 --threads 8 ...
 ```
 Without a GPU (or without CuPy) the feature transformer falls back to a pure PyTorch implementation.
+
+`scripts/cpu_smoke_test.sh <path to variant-nnue-tools stockfish>` runs the whole workflow (data generation, CPU training,
+serialization, loading the net in the engine) on a tiny data set in about a minute. CI runs it on every push.
 ## Feature set selection
 By default the trainer uses a factorized HalfKAv2 feature set (named "HalfKAv2^")
 If you wish to change the feature set used then you can use the `--features=NAME` option. For the list of available features see `--help`
