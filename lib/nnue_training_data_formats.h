@@ -56,6 +56,12 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "../variant.h"
 
+// By default only variants with king buckets have a king. Variants with a king
+// that train the layout without king buckets (KING_SQUARES 1) define HAS_KING 1.
+#ifndef HAS_KING
+#define HAS_KING (KING_SQUARES > 1)
+#endif
+
 static_assert(DATA_SIZE % 8 == 0);
 
 namespace chess
@@ -106,7 +112,11 @@ namespace chess
         Rook,
         Queen,
         MaxPiece = PIECE_TYPES - 1,
-        King = MaxPiece + (KING_SQUARES == 1),
+        // HAS_KING: the variant has a king piece, which is stored by its square in the
+        // header of the packed sfen and is the last piece type. This is independent of
+        // KING_SQUARES, which is the number of king buckets of the features (1 for the
+        // layout without king buckets, which also works for variants with a king).
+        King = MaxPiece + (HAS_KING ? 0 : 1),
 
         None,
         NB = King + 1
